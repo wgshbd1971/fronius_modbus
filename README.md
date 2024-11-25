@@ -15,6 +15,6 @@ Copy contents of custom_components folder to your home-assistant config/custom_c
 After reboot of Home-Assistant, this integration can be configured through the integration setup UI.
 
 # References
-[1]: https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
-[2]: https://github.com/binsentsu/home-assistant-solaredge-modbus/
-[3]: https://github.com/bigramonk/byd_charging
+- https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
+- https://github.com/binsentsu/home-assistant-solaredge-modbus/
+- https://github.com/bigramonk/byd_charging
