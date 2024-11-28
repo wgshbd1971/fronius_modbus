@@ -14,6 +14,13 @@ You are using this module (and it's prerequisites/dependencies) at your own risk
 Copy contents of custom_components folder to your home-assistant config/custom_components folder or install through HACS.
 After reboot of Home-Assistant, this integration can be configured through the integration setup UI.
 
+Make sure modbus is enabled on the inverter. You can check by going into the web interface of the inverter and go to:
+"Communication" -> "Modbus"
+
+And turn on:
+- "Con­trol sec­ond­ary in­ver­t­er via Mod­bus TCP"
+- "Allow control"
+
 # References
 - https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
 - https://github.com/binsentsu/home-assistant-solaredge-modbus/
