@@ -20,6 +20,7 @@ Make sure modbus is enabled on the inverter. You can check by going into the web
 And turn on:
 - "Con­trol sec­ond­ary in­ver­t­er via Mod­bus TCP"
 - "Allow control"
+- Make sure that under 'SunSpec Model Type' has 'int + SF' selected. 
 
 # References
 - https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
