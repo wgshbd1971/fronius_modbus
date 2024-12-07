@@ -22,6 +22,23 @@ And turn on:
 - "Allow control"
 - Make sure that under 'SunSpec Model Type' has 'int + SF' selected. 
 
+![modbus settings](images/modbus_settings.png?raw=true "modbus")
+
+# Example Devices
+
+Battery Storage
+![battery storage](images/example_batterystorage0.png?raw=true "storage")
+
+Battery Storage Actions
+![battery storage actions](images/example_batterystorage.png?raw=true "storage actions")
+
+Smart Meter
+![smart meter](images/example_meter.png?raw=true "meter")
+
+Inverter 
+![smart meter](images/example_inverter.png?raw=true "inverter")
+
+
 # References
 - https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
 - https://github.com/binsentsu/home-assistant-solaredge-modbus/
