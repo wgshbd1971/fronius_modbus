@@ -170,9 +170,8 @@ class Hub:
         return update_result
 
     async def test_connection(self) -> bool:
-        """Test connectivity to the Dummy hub is OK."""
-        await asyncio.sleep(1)
-        return True
+        """Test connectivity"""
+        return self.connect()
 
     def close(self):
         """Disconnect client."""
