@@ -23,6 +23,24 @@ And turn on:
 
 ![modbus settings](images/modbus_settings.png?raw=true "modbus")
 
+# Usage
+
+### Battery Storage
+| Entity  | Description |
+| --- | --- |
+| Charge Limit  | This is maximum percentage relative to maxium charging power of which the battery can be charged by.  |
+| Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
+| Grid Charge Power | The relative charging power when the storage is being charged from the grid. |
+| Minimum Reserve | The minimum reserve for storage when discharging. |
+
+| Action  | Description |
+| --- | --- |
+| Automatic  | The storage will allow charging and discharging up to the minimum reserve. |
+| Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'.  |
+| Block discharging | The storage can only be charged with PV power. |
+| Limit discharging | The storage can be charged with PV power and discharged at a limited rate. |
+| Discharging only | The can only be discharged and won't be charged with PV power. |
+| Restore Defaults | This will set the minimum reserve to 7% and operationg mode to automatic. |
 
 # Example Devices
 
