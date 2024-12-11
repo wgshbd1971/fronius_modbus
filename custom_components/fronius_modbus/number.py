@@ -3,8 +3,9 @@ from typing import Optional, Dict, Any
 
 from .const import (
     DOMAIN,
+    CONNECTION_MODBUS, 
     ATTR_MANUFACTURER,
-    NUMBER_TYPES,
+    STORAGE_NUMBER_TYPES,
     ENTITY_PREFIX,
 )
 
@@ -19,36 +20,33 @@ from homeassistant.components.number import (
 
 from homeassistant.core import callback
 
+
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     hub_name = config_entry.data[CONF_NAME]
     hub = config_entry.runtime_data
 
-    device_info = {
-        "identifiers": {(DOMAIN, f'{hub_name}_battery_storage')},
-        "name": f'Battery Storage',
-        "manufacturer": ATTR_MANUFACTURER,
-    }
-
     entities = []
 
-    for number_info in NUMBER_TYPES:
-        number = FroniusModbusNumber(
-            ENTITY_PREFIX,
-            hub,
-            device_info,
-            number_info[0],
-            number_info[1],
-            number_info[2],
-            number_info[3],
-            dict(min=number_info[4]['min'],
-                    max=number_info[4]['max'],
-                    unit=number_info[4]['unit']
+    if hub.storage_configured:
+
+        for number_info in STORAGE_NUMBER_TYPES:
+            number = FroniusModbusNumber(
+                ENTITY_PREFIX,
+                hub,
+                hub.device_info_storage,
+                number_info[0],
+                number_info[1],
+                number_info[2],
+                number_info[3],
+                dict(min=number_info[4]['min'],
+                        max=number_info[4]['max'],
+                        unit=number_info[4]['unit']
+                )
             )
-        )
-        #_LOGGER.info(f"Adding number {ENTITY_PREFIX} {number_info[0]} {hub_name}")
-        entities.append(number)
+            #_LOGGER.info(f"Adding number {ENTITY_PREFIX} {number_info[0]} {hub_name}")
+            entities.append(number)
 
     async_add_entities(entities)
     return True

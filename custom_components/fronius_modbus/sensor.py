@@ -25,6 +25,7 @@ from homeassistant.core import callback
 from . import HubConfigEntry
 from .const import (
     DOMAIN,
+    CONNECTION_MODBUS,
     ATTR_MANUFACTURER,
     INVERTER_SENSOR_TYPES,
     METER_SENSOR_TYPES,
@@ -45,20 +46,11 @@ async def async_setup_entry(
 
     entities = []
 
-    device_info = {
-        "identifiers": {(DOMAIN, f'{hub_name}_inverter')},
-        "name": f'Inverter',
-        "manufacturer": hub.data['i_manufacturer'],
-        "model": hub.data['i_model'],
-        "serial_number": hub.data['i_serial'],
-        "sw_version": hub.data['i_sw_version'],
-    }
-
     for sensor_info in INVERTER_SENSOR_TYPES.values():
         sensor = FroniusModbusSensor(
             platform_name = ENTITY_PREFIX,
             hub = hub,
-            device_info = device_info,
+            device_info = hub.device_info_inverter,
             name = sensor_info[0],
             key = sensor_info[1],
             device_class = sensor_info[2],
@@ -68,21 +60,13 @@ async def async_setup_entry(
         )
         entities.append(sensor)
 
-    if hub.read_meter1:
-        device_info = {
-            "identifiers": {(DOMAIN, f'{hub_name}_meter1')},
-            "name": f'Meter 1',
-            "manufacturer": hub.data['m1_manufacturer'],
-            "model": hub.data['m1_model'],
-            "serial_number": hub.data['m1_serial'],
-            "sw_version": hub.data['m1_sw_version'],
-        }
+    if hub.meter_configured:
 
         for sensor_info in METER_SENSOR_TYPES.values():
             sensor = FroniusModbusSensor(
                 platform_name = ENTITY_PREFIX,
                 hub = hub,
-                device_info = device_info,
+                device_info = hub.get_device_info_meter('1'),
                 name = 'Meter 1 ' + sensor_info[0],
                 key = 'm1_' + sensor_info[1],
                 device_class = sensor_info[2],
@@ -92,25 +76,21 @@ async def async_setup_entry(
             )
             entities.append(sensor)        
 
-    device_info = {
-        "identifiers": {(DOMAIN, f'{hub_name}_battery_storage')},
-        "name": f'Battery Storage',
-        "manufacturer": ATTR_MANUFACTURER,
-    }
+    if hub.storage_configured:
 
-    for sensor_info in STORAGE_SENSOR_TYPES.values():
-        sensor = FroniusModbusSensor(
-            platform_name = ENTITY_PREFIX,
-            hub = hub,
-            device_info = device_info,
-            name = sensor_info[0],
-            key = sensor_info[1],
-            device_class = sensor_info[2],
-            state_class = sensor_info[3],
-            unit = sensor_info[4],
-            icon = sensor_info[5],
-        )
-        entities.append(sensor)
+        for sensor_info in STORAGE_SENSOR_TYPES.values():
+            sensor = FroniusModbusSensor(
+                platform_name = ENTITY_PREFIX,
+                hub = hub,
+                device_info = hub.device_info_storage,
+                name = sensor_info[0],
+                key = sensor_info[1],
+                device_class = sensor_info[2],
+                state_class = sensor_info[3],
+                unit = sensor_info[4],
+                icon = sensor_info[5],
+            )
+            entities.append(sensor)
 
     async_add_entities(entities)
     return True

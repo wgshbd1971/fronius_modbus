@@ -3,8 +3,9 @@ from typing import Optional, Dict, Any
 
 from .const import (
     DOMAIN,
+    CONNECTION_MODBUS,
     ATTR_MANUFACTURER,
-    SELECT_TYPES,
+    STORAGE_SELECT_TYPES,
     ENTITY_PREFIX,
 )
 
@@ -24,23 +25,19 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
 
     entities = []
 
-    device_info = {
-        "identifiers": {(DOMAIN, f'{hub_name}_battery_storage')},
-        "name": f'Battery Storage',
-        "manufacturer": ATTR_MANUFACTURER,
-    }
+    if hub.storage_configured:
 
-    for select_info in SELECT_TYPES:
-        select = FroniusModbusSelect(
-            ENTITY_PREFIX,
-            hub,
-            device_info,
-            select_info[0],
-            select_info[1],
-            select_info[2],
-            select_info[3],
-        )
-        entities.append(select)
+        for select_info in STORAGE_SELECT_TYPES:
+            select = FroniusModbusSelect(
+                ENTITY_PREFIX,
+                hub,
+                hub.device_info_storage,
+                select_info[0],
+                select_info[1],
+                select_info[2],
+                select_info[3],
+            )
+            entities.append(select)
 
     async_add_entities(entities)
     return True

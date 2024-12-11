@@ -6,13 +6,20 @@ from homeassistant.components.sensor import (
 # This is the internal name of the integration, it should also match the directory
 # name for the integration.
 DOMAIN = "fronius_modbus"
+CONNECTION_MODBUS = "modbus"
 DEFAULT_NAME = "Fronius"
 ENTITY_PREFIX = "fm"
 DEFAULT_SCAN_INTERVAL = 10
 DEFAULT_PORT = 502
 DEFAULT_MODBUS_ADDRESS = 1
-CONF_MODBUS_ADDRESS = "modbus_address"
+DEFAULT_METER_MODBUS_ADDRESS = 200
+DEFAULT_STORAGE_MODBUS_ADDRESS = 2
+CONF_MODBUS_ADDRESS = "inverter_modbus_address"
+CONF_METER_MODBUS_ADDRESS = "meter_modbus_address"
+CONF_STORAGE_MODBUS_ADDRESS = "storage_modbus_address"
 ATTR_MANUFACTURER = "Fronius"
+SUPPORTED_MANUFACTURERS = ['Fronius']
+SUPPORTED_MODELS = ['Primo GEN24', 'Symo GEN24']
 
 BASE_INFO_ADDRESS = 40004
 INVERTER_ADDRESS = 40071
@@ -93,11 +100,11 @@ STORAGE_CONTROL_ACTIONS = {
     5: "Automatic",
 }
 
-SELECT_TYPES = [
+STORAGE_SELECT_TYPES = [
     ["Storage Control Actions", "control_actions", 0xE000, STORAGE_CONTROL_ACTIONS],
 ]
 
-NUMBER_TYPES = [
+STORAGE_NUMBER_TYPES = [
     ["Grid Charge Power", "grid_charge_power", 0xE006, "f", {"min": 0, "max": 100, "unit": "%"}],
     ["Discharge Limit", "discharge_limit", 0xE008, "f", {"min": 0, "max": 100, "unit": "%"}],
     ["Charge Limit", "charge_limit", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],

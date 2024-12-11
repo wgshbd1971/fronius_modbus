@@ -16,7 +16,13 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_PORT,
     DEFAULT_MODBUS_ADDRESS,
+    DEFAULT_METER_MODBUS_ADDRESS,
+    DEFAULT_STORAGE_MODBUS_ADDRESS,
     CONF_MODBUS_ADDRESS,
+    CONF_METER_MODBUS_ADDRESS,
+    CONF_STORAGE_MODBUS_ADDRESS,
+    SUPPORTED_MANUFACTURERS,
+    SUPPORTED_MODELS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +46,8 @@ DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
         vol.Optional(CONF_MODBUS_ADDRESS, default=DEFAULT_MODBUS_ADDRESS): int,
+        vol.Optional(CONF_METER_MODBUS_ADDRESS, default=DEFAULT_METER_MODBUS_ADDRESS): int,
+        vol.Optional(CONF_STORAGE_MODBUS_ADDRESS, default=DEFAULT_STORAGE_MODBUS_ADDRESS): int,
         vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): int,
     }
 )
@@ -58,26 +66,43 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         raise InvalidHost
     if data[CONF_PORT] > 65535:
         raise InvalidPort
+    
+    meter_addresses = [data[CONF_METER_MODBUS_ADDRESS]]
+    storage_addresses = [data[CONF_STORAGE_MODBUS_ADDRESS]]
 
-    hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_MODBUS_ADDRESS], data[CONF_SCAN_INTERVAL])
-    # The dummy hub provides a `test_connection` method to ensure it's working
-    # as expected
-    result = await hub.test_connection()
-    if not result:
+    try:
+        hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_MODBUS_ADDRESS], meter_addresses, storage_addresses, data[CONF_SCAN_INTERVAL])
+    except Exception as e:
         # If there is an error, raise an exception to notify HA that there was a
         # problem. The UI will also show there was a problem
+        _LOGGER.error(f"Cannot start hub {e}")
         raise CannotConnect
 
-    # If your PyPI package is not built with async, pass your methods
-    # to the executor:
-    # await hass.async_add_executor_job(
-    #     your_validate_func, data["username"], data["password"]
-    # )
+    manufacturer = hub.data.get('i_manufacturer')
+    if manufacturer is None:
+        _LOGGER.error(f"No manufacturer is returned")
+        raise UnsupportedHardware   
+    if manufacturer not in SUPPORTED_MANUFACTURERS:
+        _LOGGER.error(f"Unsupported manufacturer: '{manufacturer}'")
+        raise UnsupportedHardware
 
-    # If you cannot connect:
-    # throw CannotConnect
-    # If the authentication is wrong:
-    # InvalidAuth
+    model = hub.data.get('i_model')
+    if model is None:
+        _LOGGER.error(f"No model type is returned")
+        raise UnsupportedHardware
+
+    supported = False
+    for supported_model in SUPPORTED_MODELS:
+        if model.startswith(supported_model):
+            supported = True
+    
+    if not supported:
+        _LOGGER.error(f"Unsupported model {model}")
+        raise UnsupportedHardware
+
+    #result = await hub.test_connection()
+    #if not result:
+    #    raise CannotConnect
 
     # Return info that you want to store in the config entry.
     # "Title" is what is displayed to the user for this hub device
@@ -86,12 +111,12 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     return {"title": data[CONF_NAME]}
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Hello World."""
+    """Handle a config flow """
 
     VERSION = 1
     # Pick one of the available connection classes in homeassistant/config_entries.py
     # This tells HA if it should be asking for updates, or it'll be notified of updates
-    # automatically. This example uses PUSH, as the dummy hub will notify HA of
+    # automatically. This integration uses PUSH, as the hub will notify HA of
     # changes.
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
@@ -116,7 +141,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # This example does not currently cover translations, see the
                 # comments on `DATA_SCHEMA` for further details.
                 # Set the error on the `host` field, not the entire form.
-                errors["host"] = "cannot_connect"
+                errors["host"] = "invalid_host"
+            except UnsupportedHardware:
+                errors["base"] = "unsupported_hardware"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -126,7 +153,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=DATA_SCHEMA, errors=errors
         )
 
-
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
 
@@ -135,3 +161,6 @@ class InvalidHost(exceptions.HomeAssistantError):
 
 class InvalidPort(exceptions.HomeAssistantError):
     """Error to indicate there is an invalid hostname."""
+
+class UnsupportedHardware(exceptions.HomeAssistantError):
+    """Error to indicate there is an unsupported hardware."""
