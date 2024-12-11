@@ -43,7 +43,7 @@ And turn on:
 | Restore Defaults | This will set the minimum reserve to 7% and operationg mode to automatic. |
 
 | Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve |
-| --- | --- | --- | --- |
+| --- | --- | --- | --- | --- |
 | Automatic | Ignored | Ignored | Ignored | Used |
 | Charge from Grid | Ignored | Ignored | Used | Set to 99 |
 | Block discharging | Used | Set to 0 | Ignored | Ignored |
