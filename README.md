@@ -42,13 +42,13 @@ And turn on:
 | Discharging only | The can only be discharged and won't be charged with PV power. |
 | Restore Defaults | This will set the minimum reserve to 7% and operationg mode to automatic. |
 
-| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve |
-| --- | --- | --- | --- | --- |
-| Automatic | Ignored | Ignored | Ignored | Used |
-| Charge from Grid | Ignored | Ignored | Used | Set to 99 |
-| Block discharging | Used | Set to 0 | Ignored | Ignored |
-| Limit discharging | Used | Used | Ignored | Used |
-| Discharging only | Ignored | Used | Ignored | Used |
+| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Automatic | Ignored | Ignored | Ignored | Used | Will charge from grid with max 500W |
+| Charge from Grid | Ignored | Ignored | Used | Set to 99 | - |
+| Block discharging | Used | Set to 0 | Ignored | Ignored | - |
+| Limit discharging | Used | Used | Ignored | Used | - |
+| Discharging only | Ignored | Used | Ignored | Used | - |
 
 # Example Devices
 
