@@ -1,4 +1,4 @@
-"""The Detailed Hello World Push integration."""
+"""The Fronius Modbus integration."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ PLATFORMS = [Platform.NUMBER, Platform.SELECT, Platform.SENSOR]
 type HubConfigEntry = ConfigEntry[hub.Hub]
 
 async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
-    """Set up Hello World from a config entry."""
+    """Set up Fronius Modbus from a config entry."""
 
     name = entry.data[CONF_NAME]
     host = entry.data[CONF_HOST]
