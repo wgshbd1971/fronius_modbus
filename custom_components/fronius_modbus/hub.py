@@ -207,7 +207,7 @@ class Hub:
         except Exception as e:
             _LOGGER.exception("Error reading mptt data", exc_info=True)
             update_result = False
-            
+
         if self.storage_configured:
             try:
                 update_result = self.read_inverter_storage_data()
@@ -870,22 +870,22 @@ class Hub:
         return True
 
     def set_storage_control_mode(self, mode):
-        self.write_registers(unit=self._device_address, address=STORAGE_CONTROL_MODE_ADDRESS, payload=mode)
+        self.write_registers(unit=self._inverter_address, address=STORAGE_CONTROL_MODE_ADDRESS, payload=mode)
 
     def set_minimum_reserve(self, minimum_reserve):
         minimum_reserve = round(minimum_reserve * 100)
-        self.write_registers(unit=self._device_address, address=MINIMUM_RESERVE_ADDRESS, payload=minimum_reserve)
+        self.write_registers(unit=self._inverter_address, address=MINIMUM_RESERVE_ADDRESS, payload=minimum_reserve)
 
     def set_discharge_rate(self, discharge_rate):
         if discharge_rate < 0:
             discharge_rate =  int(65536 + (discharge_rate * 100))
         else:
             discharge_rate = int(round(discharge_rate * 100))
-        self.write_registers(unit=self._device_address, address=DISCHARGE_RATE_ADDRESS, payload=discharge_rate)
+        self.write_registers(unit=self._inverter_address, address=DISCHARGE_RATE_ADDRESS, payload=discharge_rate)
 
     def set_charge_rate(self, charge_rate):
         charge_rate = int(round(charge_rate * 100))
-        self.write_registers(unit=self._device_address, address=CHARGE_RATE_ADDRESS, payload=charge_rate)
+        self.write_registers(unit=self._inverter_address, address=CHARGE_RATE_ADDRESS, payload=charge_rate)
 
     def restore_defaults(self):
         self.set_storage_control_mode(0)
