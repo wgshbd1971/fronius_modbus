@@ -70,6 +70,12 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     meter_addresses = [data[CONF_METER_MODBUS_ADDRESS]]
     storage_addresses = [data[CONF_STORAGE_MODBUS_ADDRESS]]
 
+    all_addresses = meter_addresses + storage_addresses + [data[CONF_MODBUS_ADDRESS]]
+
+    if len(all_addresses) > len(set(all_addresses)):
+        _LOGGER.error(f"Modbus addresses are not unique {all_addresses}")
+        raise AddressesNotUnique
+
     try:
         hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_MODBUS_ADDRESS], meter_addresses, storage_addresses, data[CONF_SCAN_INTERVAL])
     except Exception as e:
@@ -144,6 +150,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["host"] = "invalid_host"
             except UnsupportedHardware:
                 errors["base"] = "unsupported_hardware"
+            except AddressesNotUnique:
+                errors["base"] = "modbus_address_conflict"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -164,3 +172,6 @@ class InvalidPort(exceptions.HomeAssistantError):
 
 class UnsupportedHardware(exceptions.HomeAssistantError):
     """Error to indicate there is an unsupported hardware."""
+
+class AddressesNotUnique(exceptions.HomeAssistantError):
+    """Error to indicate that the modbus addresses are not unique."""
