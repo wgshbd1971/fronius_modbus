@@ -26,9 +26,18 @@ And turn on:
 # Usage
 
 ### Battery Storage
+
+### Controls
 | Entity  | Description |
 | --- | --- |
-| Charge Limit  | This is maximum percentage relative to maxium charging power of which the battery can be charged by.  |
+| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
+| Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
+| Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
+| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
+
+| Entity  | Description |
+| --- | --- |
+| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 | Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
 | Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
 | Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
@@ -53,6 +62,15 @@ And turn on:
 | Block discharging | Used | Ignored (0%) | Ignored (0%) | Used | 
 | Block charging | Ignored (0%) | Used | Ignored (0%) | Used | 
 
+### Sensors
+| Entity  | Description |
+| --- | --- |
+To come!
+
+### Diagnostic
+| Entity  | Description |
+| --- | --- |
+To come!
 
 # Example Devices
 
