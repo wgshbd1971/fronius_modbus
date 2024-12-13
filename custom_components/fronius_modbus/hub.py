@@ -1,7 +1,7 @@
 """Fronius Modbus Hub."""
 from __future__ import annotations
 
-import asyncio
+#import asyncio
 import threading
 import logging
 import operator
@@ -37,6 +37,7 @@ from .const import (
     CHARGE_STATUS,
     CHARGE_GRID_STATUS,
     ATTR_MANUFACTURER,
+    STORAGE_EXT_CONTROL_MODE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class Hub:
         self.data['reserve_target'] = 30
         self.meter_configured = False
         self.storage_configured = False
+        self.storage_extended_control_mode = 0
 
         try: 
             result = self.read_device_info_data(prefix='i_', address=address)
@@ -595,6 +597,27 @@ class Hub:
         if self.meter_configured:
             if not self.data.get('m1_power') is None and not self.data.get('acpower') is None:
                 self.data['load'] = self.data['m1_power'] +  self.data['acpower']
+
+        # set extended storage control mode at startup
+        if self.data.get('ext_control_mode') is None:
+            ext_control_mode = 0
+            if storage_control_mode == 0:
+                ext_control_mode = 0
+            elif storage_control_mode in [1,3] and charge_power == 0:
+                ext_control_mode = 6
+            elif storage_control_mode == 1:
+                ext_control_mode = 1
+            elif storage_control_mode in [2,3] and discharge_power < 0:
+                ext_control_mode = 4
+            elif storage_control_mode in [2,3] and discharge_power == 0:
+                ext_control_mode = 5
+            elif storage_control_mode == 2:
+                ext_control_mode = 2
+            elif storage_control_mode == 3:
+                ext_control_mode = 3
+            self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[ext_control_mode]
+            self.storage_extended_control_mode = ext_control_mode
+
         return True
 
     def read_meter1_data(self):
@@ -892,52 +915,88 @@ class Hub:
         self.set_minimum_reserve(7)
         self.set_discharge_rate(100)
         self.set_charge_rate(100)
+        #self.data['discharge_limit'] = 100
+        #self.data['charge_limit'] = 100
+        self.data['grid_charge_power'] = 0
         _LOGGER.info(f"restored defaults")
 
-    def block_discharging(self):
-        self.set_storage_control_mode(2)
-        self.set_discharge_rate(0)
-        self.set_charge_rate(100)
-        self.set_minimum_reserve(30)
-        _LOGGER.info(f"blocked discharging")
+    def change_settings(self, mode, charge_limit, discharge_limit, grid_charge_power):
+        self.set_storage_control_mode(mode)
+        self.set_charge_rate(charge_limit)
+        self.set_discharge_rate(discharge_limit)
+        self.data['charge_limit'] = charge_limit
+        if mode == 4:
+            self.data['discharge_limit'] = 0
+        else:
+            self.data['discharge_limit'] = discharge_limit
+        self.data['grid_charge_power'] = grid_charge_power
 
-    def force_charging(self):
+    def set_auto_mode(self):
+        #self.set_minimum_reserve(30)
+        self.change_settings(mode=0, charge_limit=100, discharge_limit=100, grid_charge_power=0)
+        _LOGGER.info(f"Auto mode")
+
+    def set_charge_mode(self):
+        charge_rate = self.data.get('charge_limit')
+        if charge_rate is None:
+            _LOGGER.error(f'Charge Rate not set')
+            return
+        self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100, grid_charge_power=0)
+#        self.set_minimum_reserve(30)
+        _LOGGER.info(f"Set charge mode with limit: {charge_rate}")
+  
+    def set_discharge_mode(self):
+        discharge_rate = self.data.get('discharge_limit')
+        if discharge_rate is None:
+            _LOGGER.error(f'Discharge Rate not set')
+            return
+        self.change_settings(mode=1, charge_limit=100, discharge_limit=discharge_rate, grid_charge_power=0)
+#        self.set_minimum_reserve(30)
+        _LOGGER.info(f"Set discharge mode with limit: {discharge_rate}")
+
+    def set_charge_discharge_mode(self):
+        charge_rate = self.data.get('charge_limit')
+        discharge_rate = self.data.get('discharge_limit')
+        if charge_rate is None:
+            _LOGGER.error(f'Charge Rate not set')
+            return
+        if discharge_rate is None:
+            _LOGGER.error(f'Discharge Rate not set')
+            return
+        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=discharge_rate, grid_charge_power=0)
+#        self.set_minimum_reserve(30)
+        _LOGGER.info(f"Set charge/discharge mode. {charge_rate} {charge_rate}")
+
+    def set_grid_charge_mode(self):
         grid_charge_power = self.data.get('grid_charge_power')
-        _LOGGER.info(f"{grid_charge_power}")
         if grid_charge_power is None:
             _LOGGER.error(f'Grid Charge Power not set')
             return
-        self.set_storage_control_mode(2)        
-        self.set_discharge_rate(grid_charge_power * -1) # charge = negative discharge
-        self.set_minimum_reserve(99)
+        if grid_charge_power == 0:
+            grid_charge_power = 100
+        discharge_rate = grid_charge_power * -1
+        self.change_settings(mode=2, charge_limit=100, discharge_limit=discharge_rate, grid_charge_power=grid_charge_power)
+#        self.set_minimum_reserve(99)
         _LOGGER.info(f"Forced charging at {grid_charge_power}")
 
-    def limit_discharging(self):
+    def set_block_discharge_mode(self):
+        charge_rate = self.data.get('charge_limit')
+        if charge_rate is None:
+            _LOGGER.error(f'charge Rate not set')
+            return
+        if charge_rate == 0:
+            charge_rate = 100
+        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=0, grid_charge_power=0)
+ #       self.set_minimum_reserve(30)
+        _LOGGER.info(f"blocked discharging")
+
+    def set_block_charge_mode(self):
         discharge_rate = self.data.get('discharge_limit')
-        _LOGGER.info(f"{discharge_rate}")
         if discharge_rate is None:
             _LOGGER.error(f'Discharge Rate not set')
             return
-        self.set_storage_control_mode(2)
-        self.set_discharge_rate(discharge_rate)
-        self.set_minimum_reserve(30)
-        _LOGGER.info(f"Discharging limited to {discharge_rate}")
-
-    def discharging_only(self):
-        discharge_rate = 100 
-        _LOGGER.info(f"{discharge_rate}")
-        if discharge_rate is None:
-            _LOGGER.error(f'Discharge Rate not set')
-            return
-        self.set_storage_control_mode(1)
-        self.set_discharge_rate(discharge_rate) # not relevant ?
-        self.set_charge_rate(0)
-        self.set_minimum_reserve(30)
-        _LOGGER.info(f"Allow only discharging at {discharge_rate}")
-
-    def auto_30(self):
-        self.set_storage_control_mode(0)
-        self.set_minimum_reserve(30)
-        self.set_discharge_rate(100)
-        self.set_charge_rate(100)
-        _LOGGER.info(f"Auto mode with 30% min")
+        if discharge_rate == 0:
+            discharge_rate = 100
+        self.change_settings(mode=3, charge_limit=0, discharge_limit=discharge_rate, grid_charge_power=0)
+ #       self.set_minimum_reserve(30)
+        _LOGGER.info(f"Block charging at {discharge_rate}")

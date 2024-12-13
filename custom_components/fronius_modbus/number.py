@@ -9,8 +9,8 @@ from .const import (
     ENTITY_PREFIX,
 )
 
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadBuilder
+#from pymodbus.constants import Endian
+#from pymodbus.payload import BinaryPayloadBuilder
 
 from homeassistant.const import CONF_NAME
 from homeassistant.components.number import (
@@ -19,13 +19,14 @@ from homeassistant.components.number import (
 )
 
 from homeassistant.core import callback
+from .hub import Hub
 
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     hub_name = config_entry.data[CONF_NAME]
-    hub = config_entry.runtime_data
+    hub:Hub = config_entry.runtime_data
 
     entities = []
 
@@ -66,7 +67,7 @@ class FroniusModbusNumber(NumberEntity):
     ) -> None:
         """Initialize the selector."""
         self._platform_name = platform_name
-        self._hub = hub
+        self._hub:Hub = hub
         self._device_info = device_info
         self._name = name
         self._key = key
@@ -110,35 +111,48 @@ class FroniusModbusNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Change the selected value."""
-        builder = BinaryPayloadBuilder(byteorder=Endian.BIG, wordorder=Endian.LITTLE)
 
-        #if self._fmt == "u32":
-        #    builder.add_32bit_uint(int(value))
-        #elif self._fmt =="u16":
-        #    builder.add_16bit_uint(int(value))
-        #elif self._fmt == "f":
-        #    builder.add_32bit_float(float(value))
-        #else:
-        #    _LOGGER.error(f"Invalid encoding format {self._fmt} for {self._key}")
-        #    return
-
-        #response = self._hub.write_registers(unit=1, address=self._register, payload=builder.to_registers())
-        #if response.isError():
-        #    _LOGGER.error(f"Could not write value {value} to {self._key}")
-        #    return
         if self._key == 'minimum_reserve':
+            # do not change when charging from Grid
+            #if self._hub.storage_extended_control_mode != 4:
             self._hub.set_minimum_reserve(value)
-
-        if self._key == 'discharge_limit':
-            if self._hub.data.get('control_mode') == 2:
+#            else:
+#                # reset grid charge rate at 0
+#                value = 99
+        elif self._key == 'charge_limit':
+            if self._hub.storage_extended_control_mode in [1,3,5]:
+                # only change when discharge limit is in use
+                self._hub.set_charge_rate(value)
+            elif self._hub.storage_extended_control_mode in [4,6]:
+                # reset charge rate at 0 when charging from Grid
+                return
+                value = 0
+            elif self._hub.storage_extended_control_mode in [0,2]:
+                return
+                # reset charge rate at 100
+                value = 100
+        elif self._key == 'discharge_limit':
+            if self._hub.storage_extended_control_mode in [2,3,6]:
+                # only change when discharge limit is in use
                 self._hub.set_discharge_rate(value)
-
-        if self._key == 'charge_limit':
-            if self._hub.data.get('control_mode') == 2 and self._hub.data.get('soc') == 99:
+            elif self._hub.storage_extended_control_mode in [4,5]:
+                # reset discharge rate at 0 when charging from Grid
+                return
+                value = 0
+            elif self._hub.storage_extended_control_mode in [0,1]:
+                # reset discharge rate at 100
+                return
+                value = 100
+        elif self._key == 'grid_charge_power':
+            if self._hub.storage_extended_control_mode == 4:
                 self._hub.set_discharge_rate(value * -1)
+            else:
+                # reset grid charge rate at 0
+                return
+                value = 0
 
         self._hub.data[self._key] = value
-        _LOGGER.info(f"Number {self._key} set to {value}")
+        _LOGGER.info(f"Number {self._key} set to {value} cm {self._hub.storage_extended_control_mode}")
         self.async_write_ha_state()
 
     @property

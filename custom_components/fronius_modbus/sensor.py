@@ -22,6 +22,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.core import callback
 #from homeassistant.util import dt as dt_util
 
+
 from . import HubConfigEntry
 from .const import (
     DOMAIN,
@@ -32,6 +33,7 @@ from .const import (
     STORAGE_SENSOR_TYPES,
     ENTITY_PREFIX,
 )
+from .hub import Hub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Add sensors for passed config_entry in HA."""
-    hub = config_entry.runtime_data
+    hub:Hub = config_entry.runtime_data
     hub_name = config_entry.data[CONF_NAME]
 
     entities = []
@@ -57,6 +59,7 @@ async def async_setup_entry(
             state_class = sensor_info[3],
             unit = sensor_info[4],
             icon = sensor_info[5],
+            entity_category = sensor_info[6],
         )
         entities.append(sensor)
 
@@ -73,6 +76,7 @@ async def async_setup_entry(
                 state_class = sensor_info[3],
                 unit = sensor_info[4],
                 icon = sensor_info[5],
+                entity_category = sensor_info[6],
             )
             entities.append(sensor)        
 
@@ -89,6 +93,7 @@ async def async_setup_entry(
                 state_class = sensor_info[3],
                 unit = sensor_info[4],
                 icon = sensor_info[5],
+                entity_category = sensor_info[6],
             )
             entities.append(sensor)
 
@@ -98,10 +103,10 @@ async def async_setup_entry(
 class FroniusModbusSensor(SensorEntity):
     """Representation of an Fronius Modbus Modbus sensor."""
 
-    def __init__(self, platform_name, hub, device_info, name, key, device_class, state_class, unit, icon):
+    def __init__(self, platform_name, hub, device_info, name, key, device_class, state_class, unit, icon, entity_category):
         """Initialize the sensor."""
         self._platform_name = platform_name
-        self._hub = hub
+        self._hub:Hub = hub
         self._key = key
         self._name = name
         self._unit_of_measurement = unit
@@ -111,6 +116,7 @@ class FroniusModbusSensor(SensorEntity):
             self._attr_device_class = device_class
         if not state_class is None:
             self._attr_state_class = state_class
+        self._attr_entity_category = entity_category
 
 #        self._attr_state_class = SensorStateClass.MEASUREMENT
 #        if self._unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR :
@@ -137,7 +143,7 @@ class FroniusModbusSensor(SensorEntity):
             self._state = self._hub.data[self._key]
 
             self._icon = icon_for_battery_level(
-                battery_level=self.native_value, charging=charging
+                battery_level=self.native_value, charging=False
             )
 
     @property

@@ -16,12 +16,13 @@ from homeassistant.components.select import (
 )
 
 from homeassistant.core import callback
+from .hub import Hub
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     hub_name = config_entry.data[CONF_NAME]
-    hub = config_entry.runtime_data
+    hub:Hub = config_entry.runtime_data
 
     entities = []
 
@@ -62,7 +63,7 @@ class FroniusModbusSelect(SelectEntity):
     ) -> None:
         """Initialize the selector."""
         self._platform_name = platform_name
-        self._hub = hub
+        self._hub:Hub = hub
         self._device_info = device_info
         self._name = name
         self._key = key
@@ -105,22 +106,25 @@ class FroniusModbusSelect(SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         new_mode = get_key(self._option_dict, option)
-        _LOGGER.info(f"select changed to: {new_mode} {option}")
-        #self._hub.write_registers(unit=1, address=self._register, payload=new_mode)
+        #_LOGGER.info(f"select changed to: {new_mode} {option}")
         if new_mode == 0:
-            self._hub.restore_defaults()
+            self._hub.set_auto_mode()
         elif new_mode == 1:
-            self._hub.limit_discharging()
+            self._hub.set_charge_mode()
         elif new_mode == 2:
-            self._hub.block_discharging()
+            self._hub.set_discharge_mode()
         elif new_mode == 3:
-            self._hub.discharging_only()
+            self._hub.set_charge_discharge_mode()
         elif new_mode == 4:
-            self._hub.force_charging()
+            self._hub.set_grid_charge_mode()
         elif new_mode == 5:
-            self._hub.auto_30()
+            self._hub.set_block_discharge_mode()
+        elif new_mode == 6:
+            self._hub.set_block_charge_mode()
 
         self._hub.data[self._key] = option
+        self._hub.storage_extended_control_mode = new_mode
+        #_LOGGER.info(f"select changed to: {new_mode} {option}")
         self.async_write_ha_state()
 
     @property

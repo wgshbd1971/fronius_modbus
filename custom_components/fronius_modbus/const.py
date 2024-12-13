@@ -1,7 +1,8 @@
 from homeassistant.components.sensor import (
     SensorDeviceClass,
-    SensorStateClass
+    SensorStateClass,
 )
+from homeassistant.helpers.entity import EntityCategory
 
 # This is the internal name of the integration, it should also match the directory
 # name for the integration.
@@ -36,37 +37,37 @@ CHARGE_RATE_ADDRESS = 40356
     # Serial
 
 INVERTER_SENSOR_TYPES = {
-    "acpower": ["AC Power", "acpower", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt"],
-    "acenergy": ["AC Energy", "acenergy", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt"],
-    "tempcab": ["Temperature", "tempcab", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, "°C", "mdi:thermometer"],
-    "mppt1_power": ["MPPT1 Power", "mppt1_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power"],
-    "mppt2_power": ["MPPT2 Power", "mppt2_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power"],
-    "mppt3_power": ["Storage Charging Power", "mppt3_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery"],
-    "mppt4_power": ["Storage Discharging Power", "mppt4_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery"],
-    "pv_power": ["PV Power", "pv_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power"],
-    "storage_power": ["Storage Power", "storage_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery"],
-    "mppt1_lfte": ["MPPT1 Lifetime Energy", "mppt1_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:solar-panel"],
-    "mppt2_lfte": ["MPPT2 Lifetime Energy", "mppt2_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:solar-panel"],
-    "mppt3_lfte": ["Storage Charging Lifetime Energy", "mppt3_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:home-battery"],
-    "mppt4_lfte": ["Storage Discharging Lifetime Energy", "mppt4_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:home-battery"],
-    "load": ["Load", "load", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt"],
+    "acpower": ["AC Power", "acpower", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt", None],
+    "acenergy": ["AC Energy", "acenergy", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt", None],
+    "tempcab": ["Temperature", "tempcab", SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, "°C", "mdi:thermometer", None],
+    "mppt1_power": ["MPPT1 Power", "mppt1_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power", None],
+    "mppt2_power": ["MPPT2 Power", "mppt2_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power", None],
+    "mppt3_power": ["Storage Charging Power", "mppt3_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery", None],
+    "mppt4_power": ["Storage Discharging Power", "mppt4_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery", None],
+    "pv_power": ["PV Power", "pv_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:solar-power", None],
+    "storage_power": ["Storage Power", "storage_power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:home-battery", None],
+    "mppt1_lfte": ["MPPT1 Lifetime Energy", "mppt1_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:solar-panel", None],
+    "mppt2_lfte": ["MPPT2 Lifetime Energy", "mppt2_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:solar-panel", None],
+    "mppt3_lfte": ["Storage Charging Lifetime Energy", "mppt3_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:home-battery", None],
+    "mppt4_lfte": ["Storage Discharging Lifetime Energy", "mppt4_lfte", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:home-battery", None],
+    "load": ["Load", "load", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt", None],
 }
 
 METER_SENSOR_TYPES = {
-    "power": ["Power", "power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt"],
-    "exported": ["Exported", "exported", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt"],
-    "imported": ["Imported", "imported", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt"],
+    "power": ["Power", "power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:lightning-bolt", None],
+    "exported": ["Exported", "exported", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt", None],
+    "imported": ["Imported", "imported", SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "Wh", "mdi:lightning-bolt", None],
 }
 
 STORAGE_SENSOR_TYPES = {
-    "control_mode": ["Storage Control Mode", "control_mode", None, None, None, None],
-    "charge_status": ["Charge Status", "charge_status", None, None, None, None],
-    "max_charge": ["Max Charging Power", "max_charge", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:gauge"],
-    "soc": ["State of Charge", "soc", None, SensorStateClass.MEASUREMENT, "%", "mdi:battery"],
-    "charging_power": ["Charging Power", "charging_power",  None, None, "%", "mdi:gauge"],
-    "discharging_power": ["Discharging Power", "discharging_power",  None, None, "%", "mdi:gauge"],
-    "minimum_reserve": ["Minimum Reserve", "minimum_reserve",  None, None, "%", "mdi:gauge"],
-    "grid_charging": ["Grid Charging", "grid_charging",  None, None, None, None],
+    "control_mode": ["Core Storage Control Mode", "control_mode", None, None, None, None, EntityCategory.DIAGNOSTIC],
+    "charge_status": ["Charge Status", "charge_status", None, None, None, None, None, None],
+    "max_charge": ["Max Charging Power", "max_charge", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", "mdi:gauge", EntityCategory.DIAGNOSTIC],
+    "soc": ["State of Charge", "soc", None, SensorStateClass.MEASUREMENT, "%", "mdi:battery", None],
+    "charging_power": ["Charging Power", "charging_power",  None, None, "%", "mdi:gauge", EntityCategory.DIAGNOSTIC],
+    "discharging_power": ["Discharging Power", "discharging_power",  None, None, "%", "mdi:gauge", EntityCategory.DIAGNOSTIC],
+    "minimum_reserve": ["Minimum Reserve", "minimum_reserve",  None, None, "%", "mdi:gauge", None],
+    "grid_charging": ["Grid Charging", "grid_charging",  None, None, None, None, EntityCategory.DIAGNOSTIC],
 }
 
 STORAGE_CONTROL_MODE = {
@@ -91,23 +92,24 @@ CHARGE_GRID_STATUS = {
     2: "Enabled",
 }
 
-STORAGE_CONTROL_ACTIONS = {
-    0: "Restore defaults",
-    1: "Limit discharging",
-    2: "Block discharging",
-    3: "Discharging only",
+STORAGE_EXT_CONTROL_MODE = {
+    0: "Auto",
+    1: "PV Charge Limit",
+    2: "Discharge Limit",
+    3: "PV Charge and Discharge Limit",
     4: "Charge from Grid",
-    5: "Automatic",
+    5: "Block Discharging",
+    6: "Block Charging",
 }
 
 STORAGE_SELECT_TYPES = [
-    ["Storage Control Actions", "control_actions", 0xE000, STORAGE_CONTROL_ACTIONS],
+    ["Storage Control Mode", "ext_control_mode", 0xE000, STORAGE_EXT_CONTROL_MODE],
 ]
 
 STORAGE_NUMBER_TYPES = [
     ["Grid Charge Power", "grid_charge_power", 0xE006, "f", {"min": 0, "max": 100, "unit": "%"}],
     ["Discharge Limit", "discharge_limit", 0xE008, "f", {"min": 0, "max": 100, "unit": "%"}],
-    ["Charge Limit", "charge_limit", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],
+    ["PV Charge Limit", "charge_limit", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],
     ["Minimum Reserve", "minimum_reserve", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],
-    ["Reserve Target", "reserve_target", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],
+#    ["Reserve Target", "reserve_target", 0xE00B, "u32", {"min": 0, "max": 100, "unit": "%"}],
 ]
