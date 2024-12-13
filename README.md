@@ -35,13 +35,7 @@ And turn on:
 | Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
 | Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
 
-| Entity  | Description |
-| --- | --- |
-| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
-| Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
-| Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
-| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
-
+### Storage Control Modes
 | Mode  | Description |
 | --- | --- |
 | Auto  | The storage will allow charging and discharging up to the minimum reserve. |
@@ -52,6 +46,7 @@ And turn on:
 | Block discharging | The storage can only be charged with PV power. |
 | Block charging | The can only be discharged and won't be charged with PV power. |
 
+### Controls used by Modes
 | Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve | 
 | --- | --- | --- | --- | --- | 
 | Automatic | Ignored (100%) | Ignored (100%) | Ignored (0%) | Used | 
