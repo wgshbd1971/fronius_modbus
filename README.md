@@ -1,7 +1,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
 
 # fronius_modbus
-Home assistant Custom Component for reading data from Fronius Gen24 Inverter and connected smart meters and battery storage. This integration uses a local modbus connection instead of the cloud based SolarWeb integration. 
+Home assistant Custom Component for reading data from Fronius Gen24 Inverter and connected smart meters and battery storage. This integration uses a local modbus connection. 
 
 > [!CAUTION]
 > This is a work in progress project - it is still in early development stage, so there are still breaking changes possible.
@@ -26,21 +26,46 @@ And turn on:
 # Usage
 
 ### Battery Storage
+
+### Controls
 | Entity  | Description |
 | --- | --- |
-| Charge Limit  | This is maximum percentage relative to maxium charging power of which the battery can be charged by.  |
+| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 | Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
-| Grid Charge Power | The relative charging power when the storage is being charged from the grid. |
-| Minimum Reserve | The minimum reserve for storage when discharging. |
+| Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
+| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
 
-| Action  | Description |
+### Storage Control Modes
+| Mode  | Description |
 | --- | --- |
-| Automatic  | The storage will allow charging and discharging up to the minimum reserve. |
+| Auto  | The storage will allow charging and discharging up to the minimum reserve. |
+| PV Charge Limit | The storage can be charged with PV power at a limited rate. |
+| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate. |
+| PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. |
 | Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'.  |
 | Block discharging | The storage can only be charged with PV power. |
-| Limit discharging | The storage can be charged with PV power and discharged at a limited rate. |
-| Discharging only | The can only be discharged and won't be charged with PV power. |
-| Restore Defaults | This will set the minimum reserve to 7% and operationg mode to automatic. |
+| Block charging | The can only be discharged and won't be charged with PV power. |
+
+### Controls used by Modes
+| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve | 
+| --- | --- | --- | --- | --- | 
+| Automatic | Ignored (100%) | Ignored (100%) | Ignored (0%) | Used | 
+| PV Charge Limit | Used | Ignored (100%) | Ignored  (0%) | Used | 
+| Discharge Limit  | Ignored (100%) | Used | Ignored (0%) | Used | 
+| PV Charge and Discharge Limit  | Used | Used | Ignored (0%) | Used | 
+| Charge from Grid | Ignored | Ignored | Used | Used | 
+| Block discharging | Used | Ignored (0%) | Ignored (0%) | Used | 
+| Block charging | Ignored (0%) | Used | Ignored (0%) | Used | 
+
+### Sensors
+| Entity  | Description |
+| --- | --- |
+To come!
+
+### Diagnostic
+| Entity  | Description |
+| --- | --- |
+To come!
 
 # Example Devices
 
