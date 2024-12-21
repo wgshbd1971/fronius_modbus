@@ -1,7 +1,7 @@
 """Fronius Modbus Hub."""
 from __future__ import annotations
 
-#import asyncio
+import requests
 import threading
 import logging
 import operator
@@ -47,15 +47,14 @@ class Hub:
 
     manufacturer = "Fronius"
 
-    def __init__(self, hass: HomeAssistant, name: str, host: str, port: int, address: int, meter_addresses, storage_addresses, scan_interval: int) -> None:
+    def __init__(self, hass: HomeAssistant, name: str, host: str, port: int, inverter_unit_id: int, meter_unit_ids, scan_interval: int) -> None:
         """Init hub."""
         self._host = host
         self._port = port
         self._hass = hass
         self._name = name
-        self._inverter_address = address
-        self._meter_addresses = meter_addresses
-        self._storage_addresses = storage_addresses
+        self._inverter_unit_id = inverter_unit_id
+        self._meter_unit_ids = meter_unit_ids
         self._lock = threading.Lock()
         self._id = f'{name.lower()}_{host.lower().replace('.','')}'
         self.online = True        
@@ -64,56 +63,60 @@ class Hub:
         self._unsub_interval_method = None
         self._entities = []
         self.data = {}
-        self.data['reserve_target'] = 30
+        #self.data['reserve_target'] = 30
         self.meter_configured = False
+        self.mppt_configured = False
         self.storage_configured = False
         self.storage_extended_control_mode = 0
 
+
+    async def init_data(self):
         try: 
-            result = self.read_device_info_data(prefix='i_', address=address)
+            result = self.read_device_info_data(prefix='i_', unit_id=self._inverter_unit_id)
         except Exception as e:
-            _LOGGER.error(f"Error reading inverter info {host}:{port} {address}")
-            raise Exception(f"Error reading inverter info {address}")
+            _LOGGER.error(f"Error reading inverter info {self._host}:{self._port} unit id: {self._inverter_unit_id}")
+            raise Exception(f"Error reading inverter info unit id: {self._inverter_unit_id}")
         if result == False:
-            _LOGGER.error(f"Empty inverter info {host}:{port} {address}")
-            raise Exception(f"Empty inverter info {address}")
-    
+            _LOGGER.error(f"Empty inverter info {self._host}:{self._port} unit id: {self._inverter_unit_id}")
+            raise Exception(f"Empty inverter info unit id: {self._inverter_unit_id}")
+
+        try:
+            if self.read_mppt_data():
+                self.mppt_configured = True
+        except Exception as e:
+            _LOGGER.warning(f"No mppt found")
+
         i = 1
-        if len(meter_addresses)>5:
+        if len(self._meter_unit_ids)>5:
             _LOGGER.error(f"Too many meters configured, max 5")
             return
-        elif len(meter_addresses)>0:
+        elif len(self._meter_unit_ids)>0:
             self.meter_configured = True
 
-        for meter_address in meter_addresses:
+        for unit_id in self._meter_unit_ids:
             try:
-                self.read_device_info_data(prefix=f'm{i}_', address=meter_address)
+                self.read_device_info_data(prefix=f'm{i}_', unit_id=unit_id)
             except Exception as e:
-                _LOGGER.info(f"Error reading meter info {meter_address}")
+                _LOGGER.info(f"Error reading meter info unit id: {unit_id}")
             i += 1
 
-        i = 1
-        if len(storage_addresses)>2:
-            _LOGGER.error(f"Too many storages configured, max 2")
-            return
-        elif len(storage_addresses)>0:
-            self.storage_configured = True
+        try:
+            if self.read_inverter_storage_data():
+                self.storage_configured = True
+                result : bool = await self._hass.async_add_executor_job(self.get_json_storage_info)
+        except Exception as e:
+            _LOGGER.info(f"No storage found")
 
-        for storage_address in storage_addresses:
-            try:
-                prefix = f's{i}_'
-                #self.read_device_info_data(prefix=f's{i}_', address=storage_address)
-                self.data[prefix + 'address'] = storage_address
-            except Exception as e:
-                _LOGGER.info(f"Error reading storage info {storage_address}")
+        return True
 
     @property 
     def device_info_storage(self) -> dict:
         return {
             "identifiers": {(DOMAIN, f'{self._name}_battery_storage')},
             "name": f'Battery Storage',
-            "manufacturer": ATTR_MANUFACTURER,
-            "hw_version": f'modbus id-{self.data.get('s1_address')}',
+            "manufacturer": self.data.get('s_manufacturer'),
+            "model": self.data.get('s_model'),
+            "serial_number": self.data.get('s_serial'),
         }
 
     @property 
@@ -125,7 +128,7 @@ class Hub:
             "model": self.data.get('i_model'),
             "serial_number": self.data.get('i_serial'),
             "sw_version": self.data.get('i_sw_version'),
-            "hw_version": f'modbus id-{self.data.get('i_address')}',
+            #"hw_version": f'modbus id-{self.data.get('i_unit_id')}',
         }
     
     def get_device_info_meter(self, id) -> dict:
@@ -136,7 +139,7 @@ class Hub:
             "model": self.data.get(f'm{id}_model'),
             "serial_number": self.data.get(f'm{id}_serial'),
             "sw_version": self.data.get(f'm{id}_sw_version'),
-            "hw_version": f'modbus id-{self.data.get(f'm{id}_address')}',
+            #"hw_version": f'modbus id-{self.data.get(f'm{id}_unit_id')}',
         }
 
     @property
@@ -171,7 +174,6 @@ class Hub:
         """Time to update."""
         result : bool = await self._hass.async_add_executor_job(self._refresh_modbus_data)
         if result:
-            #_LOGGER.info("modbus referesh")
             for update_callback in self._entities:
                 update_callback()
 
@@ -188,6 +190,29 @@ class Hub:
             raise ValueError(f"Value {value} failed validation ({comparison}{against})")
         return value
 
+#    async def get_json_storage_info(self):
+#        resp = await self._hass.async_add_executor_job(self.get_json_storage_info_main)
+
+    def get_json_storage_info(self):
+        url = f"http://{self._host}/solar_api/v1/GetStorageRealtimeData.cgi"
+
+        try:
+            response = requests.get(url)
+
+            if response.status_code == 200:
+                data = response.json()
+            else:
+                _LOGGER.error(f"Error storage json data {response.status_code}")
+                return
+
+            details = data['Body']['Data']['1']['Controller']['Details']
+            self.data['s_manufacturer'] = details['Manufacturer']
+            self.data['s_model'] = details['Model']
+            self.data['s_serial'] = details['Serial'].trim()
+ 
+        except Exception as e:
+            _LOGGER.error(f"Error storage json data {url} {e}")
+
     def _refresh_modbus_data(self, _now: Optional[int] = None) -> bool:
         """Time to update."""
         if not self._entities:
@@ -196,25 +221,28 @@ class Hub:
         if not self._check_and_reconnect():
             #if not connected, skip
             return False
+        
 
         if self.meter_configured:
-            for meter_address in self._meter_addresses:
+            for meter_address in self._meter_unit_ids:
                 try:
-                    update_result = self.read_meter_data(meter_prefix="m1_", device_address=meter_address)
+                    update_result = self.read_meter_data(meter_prefix="m1_", unit_id=meter_address)
                 except Exception as e:
                     _LOGGER.error(f"Error reading meter data {meter_address}. {e}")
                     #update_result = False
-        try:
-            update_result = self.read_multiple_mptt_data()
-        except Exception as e:
-            _LOGGER.exception("Error reading mptt data", exc_info=True)
-            update_result = False
+        
+        if self.mppt_configured:
+            try:
+                update_result = self.read_mppt_data()
+            except Exception as e:
+                _LOGGER.exception("Error reading mptt data", exc_info=True)
+                update_result = False
 
         if self.storage_configured:
             try:
                 update_result = self.read_inverter_storage_data()
             except Exception as e:
-                _LOGGER.exception("Error reading storage data", exc_info=True)
+                _LOGGER.exception("Error reading inverter storage data", exc_info=True)
                 update_result = False
         try:
             update_result = self.read_inverter_data()
@@ -257,20 +285,20 @@ class Hub:
                             self._client.comm_params.host, self._client.comm_params.port)
         return result
 
-    def read_holding_registers(self, device_address, address, count):
+    def read_holding_registers(self, unit_id, address, count):
         """Read holding registers."""
-        _LOGGER.info(f"read registers a: {address} s: {device_address} c {count}")
+        _LOGGER.info(f"read registers a: {address} s: {unit_id} c {count}")
         with self._lock:
             return self._client.read_holding_registers(
-                address=address, count=count, slave=device_address
+                address=address, count=count, slave=unit_id
             )
 
-    def write_registers(self, unit, address, payload):
+    def write_registers(self, unit_id, address, payload):
         """Write registers."""
         _LOGGER.info(f"write registers a: {address} p: {payload}")
         with self._lock:
             return self._client.write_registers(
-                address=address, values=payload, slave=unit
+                address=address, values=payload, slave=unit_id
             )
 
     def calculate_value(self, value, sf):
@@ -282,12 +310,12 @@ class Hub:
         filter = ''.join([chr(i) for i in range(0, 32)])
         return value.translate(str.maketrans('', '', filter)).strip()
 
-    def read_device_info_data(self, prefix, address):
+    def read_device_info_data(self, prefix, unit_id):
         data = self.read_holding_registers(
-            device_address=address, address=BASE_INFO_ADDRESS, count=65
+            unit_id=unit_id, address=BASE_INFO_ADDRESS, count=65
         )
         if data.isError():
-            _LOGGER.error(f"error reading device info {prefix} {address} {BASE_INFO_ADDRESS} 65")
+            _LOGGER.error(f"error reading device info {prefix} {unit_id} {BASE_INFO_ADDRESS}")
             return False
 
         decoder = BinaryPayloadDecoder.fromRegisters(
@@ -314,13 +342,13 @@ class Hub:
         self.data[prefix + 'model'] = model
         self.data[prefix + 'sw_version'] = sw_version
         self.data[prefix + 'serial'] = serial
-        self.data[prefix + 'address'] = address
+        self.data[prefix + 'unit_id'] = unit_id
 
         return True
 
     def read_inverter_data(self):
         inverter_data = self.read_holding_registers(
-            device_address=self._inverter_address, address=INVERTER_ADDRESS, count=38
+            unit_id=self._inverter_unit_id, address=INVERTER_ADDRESS, count=38
         )
         if inverter_data.isError():
             return False
@@ -428,10 +456,10 @@ class Hub:
 
         return True
 
-    def read_multiple_mptt_data(self):
+    def read_mppt_data(self):
 
         data = self.read_holding_registers(
-            device_address=self._inverter_address, address=MPPT_ADDRESS, count=88
+            unit_id=self._inverter_unit_id, address=MPPT_ADDRESS, count=88
         )
         if data.isError():
             _LOGGER.error(f"modbus mppt error {data}")
@@ -511,11 +539,33 @@ class Hub:
 
         return True
 
+    # def read_storage_data(self):
+    #     for i in range(2,247):
+    #         self.read_storage_data_id(i)
+
+    # def read_storage_data_id(self, id):
+    #     """start reading storage data"""
+    #     address = 0
+    #     data = self.read_holding_registers(
+    #         unit_id=id, address=address, count=102
+    #     )
+    #     if data.isError():
+    #         _LOGGER.error(f"modbus storage error id:{id} data:{data}")
+    #         return False
+
+    #     decoder = BinaryPayloadDecoder.fromRegisters(
+    #         data.registers, byteorder=Endian.BIG
+    #     )
+
+    #     bmuSerial = decoder.decode_string(18)
+    #     #temp = decoder.decode_16bit_float()
+    #     _LOGGER.error(f"storage serial {bmuSerial}")
+
     def read_inverter_storage_data(self):
         """start reading storage data"""
         address = STORAGE_INFO_ADDRESS
         data = self.read_holding_registers(
-            device_address=self._inverter_address, address=address, count=24
+            unit_id=self._inverter_unit_id, address=address, count=24
         )
         if data.isError():
             _LOGGER.error(f"modbus storage error {data}")
@@ -590,27 +640,34 @@ class Hub:
             else: 
                 self.data['grid_charge_power'] = (discharge_power * -1) / 100.0
                 self.data['discharge_limit'] = 0
-            self.data['charge_limit'] = charge_power / 100
+            if charge_power >= 0:
+                self.data['charge_limit'] = charge_power / 100
+                self.data['grid_discharge_power'] = 0
+            else: 
+                self.data['grid_discharge_power'] = (charge_power * -1) / 100.0
+                self.data['charge_limit'] = 0
 
             self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
 
         if self.meter_configured:
             if not self.data.get('m1_power') is None and not self.data.get('acpower') is None:
-                self.data['load'] = self.data['m1_power'] +  self.data['acpower']
+                self.data['load'] = self.data['m1_power'] + self.data['acpower']
 
         # set extended storage control mode at startup
-        if self.data.get('ext_control_mode') is None:
-            ext_control_mode = 0
+        ext_control_mode = self.data.get('ext_control_mode')
+        if ext_control_mode is None:
             if storage_control_mode == 0:
                 ext_control_mode = 0
             elif storage_control_mode in [1,3] and charge_power == 0:
-                ext_control_mode = 6
+                ext_control_mode = 7
             elif storage_control_mode == 1:
                 ext_control_mode = 1
             elif storage_control_mode in [2,3] and discharge_power < 0:
                 ext_control_mode = 4
-            elif storage_control_mode in [2,3] and discharge_power == 0:
+            elif storage_control_mode in [2,3] and charge_power < 0:
                 ext_control_mode = 5
+            elif storage_control_mode in [2,3] and discharge_power == 0:
+                ext_control_mode = 6
             elif storage_control_mode == 2:
                 ext_control_mode = 2
             elif storage_control_mode == 3:
@@ -618,19 +675,32 @@ class Hub:
             self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[ext_control_mode]
             self.storage_extended_control_mode = ext_control_mode
 
+        if ext_control_mode == 7:
+            soc = self.data.get('soc')
+            if storage_control_mode == 2 and soc == 100:
+                _LOGGER.error(f'Calibration hit 100%, start discharge')
+                self.change_settings(1, 0, 100, 0)
+            elif storage_control_mode == 3 and soc <= 5: 
+                _LOGGER.error(f'Calibration hit 5%, return to auto mode')
+                self.set_auto_mode()
+                self.set_minimum_reserve(30)
+                self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[0]
+                self.storage_extended_control_mode = 0
+
         return True
 
     def read_meter1_data(self):
         if self.meter_configured:
-            return self.read_meter_data(meter_prefix="m1_", device_address=200)
+            return self.read_meter_data(meter_prefix="m1_", unit_id=200)
         return True
 
-    def read_meter_data(self, meter_prefix, device_address):
+    def read_meter_data(self, meter_prefix, unit_id):
         """start reading meter  data"""
         meter_data = self.read_holding_registers(
-            device_address=device_address, address=INVERTER_ADDRESS, count=103
+            unit_id=unit_id, address=INVERTER_ADDRESS, count=103
         )
         if meter_data.isError():
+            _LOGGER.error(f"meter data error {unit_id} {meter_data}")
             return False
 
         decoder = BinaryPayloadDecoder.fromRegisters(
@@ -892,48 +962,58 @@ class Hub:
 
         return True
 
-    def set_storage_control_mode(self, mode):
-        self.write_registers(unit=self._inverter_address, address=STORAGE_CONTROL_MODE_ADDRESS, payload=mode)
+    def set_storage_control_mode(self, mode: int):
+        if not mode in [0,1,2,3]:
+            _LOGGER.error(f'Attempted to set to unsupported storage control mode. Value: {mode}')
+            return
+        self.write_registers(unit_id=self._inverter_unit_id, address=STORAGE_CONTROL_MODE_ADDRESS, payload=mode)
 
-    def set_minimum_reserve(self, minimum_reserve):
+    def set_minimum_reserve(self, minimum_reserve: float):
+        if minimum_reserve < 5:
+            _LOGGER.error(f'Attempted to set minimum reserve below 5%. Value: {minimum_reserve}')
+            return
         minimum_reserve = round(minimum_reserve * 100)
-        self.write_registers(unit=self._inverter_address, address=MINIMUM_RESERVE_ADDRESS, payload=minimum_reserve)
+        self.write_registers(unit_id=self._inverter_unit_id, address=MINIMUM_RESERVE_ADDRESS, payload=minimum_reserve)
 
     def set_discharge_rate(self, discharge_rate):
         if discharge_rate < 0:
             discharge_rate =  int(65536 + (discharge_rate * 100))
         else:
             discharge_rate = int(round(discharge_rate * 100))
-        self.write_registers(unit=self._inverter_address, address=DISCHARGE_RATE_ADDRESS, payload=discharge_rate)
+        self.write_registers(unit_id=self._inverter_unit_id, address=DISCHARGE_RATE_ADDRESS, payload=discharge_rate)
 
     def set_charge_rate(self, charge_rate):
-        charge_rate = int(round(charge_rate * 100))
-        self.write_registers(unit=self._inverter_address, address=CHARGE_RATE_ADDRESS, payload=charge_rate)
+        if charge_rate < 0:
+            charge_rate =  int(65536 + (charge_rate * 100))
+        else:
+            charge_rate = int(round(charge_rate * 100))
+        self.write_registers(unit_id=self._inverter_unit_id, address=CHARGE_RATE_ADDRESS, payload=charge_rate)
 
-    def restore_defaults(self):
-        self.set_storage_control_mode(0)
-        self.set_minimum_reserve(7)
-        self.set_discharge_rate(100)
-        self.set_charge_rate(100)
-        #self.data['discharge_limit'] = 100
-        #self.data['charge_limit'] = 100
-        self.data['grid_charge_power'] = 0
-        _LOGGER.info(f"restored defaults")
-
-    def change_settings(self, mode, charge_limit, discharge_limit, grid_charge_power):
+    def change_settings(self, mode, charge_limit, discharge_limit, grid_charge_power=0, grid_discharge_power=0, minimum_reserve=None):
         self.set_storage_control_mode(mode)
         self.set_charge_rate(charge_limit)
         self.set_discharge_rate(discharge_limit)
         self.data['charge_limit'] = charge_limit
-        if mode == 4:
+        if self.storage_extended_control_mode == 4:
             self.data['discharge_limit'] = 0
         else:
             self.data['discharge_limit'] = discharge_limit
+        if self.storage_extended_control_mode == 5:
+            self.data['charge_limit'] = 0
+        else:
+            self.data['charge_limit'] = charge_limit
         self.data['grid_charge_power'] = grid_charge_power
+        self.data['grid_discharge_power'] = grid_discharge_power
+        if not minimum_reserve is None:
+            self.set_minimum_reserve(minimum_reserve)
+
+    def restore_defaults(self):
+        self.change_settings(mode=0, charge_limit=100, discharge_limit=100, minimum_reserve=7)
+        _LOGGER.info(f"restored defaults")
 
     def set_auto_mode(self):
         #self.set_minimum_reserve(30)
-        self.change_settings(mode=0, charge_limit=100, discharge_limit=100, grid_charge_power=0)
+        self.change_settings(mode=0, charge_limit=100, discharge_limit=100)
         _LOGGER.info(f"Auto mode")
 
     def set_charge_mode(self):
@@ -941,7 +1021,9 @@ class Hub:
         if charge_rate is None:
             _LOGGER.error(f'Charge Rate not set')
             return
-        self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100, grid_charge_power=0)
+        if charge_rate <= 0:
+            charge_rate = 100
+        self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100)
 #        self.set_minimum_reserve(30)
         _LOGGER.info(f"Set charge mode with limit: {charge_rate}")
   
@@ -950,7 +1032,9 @@ class Hub:
         if discharge_rate is None:
             _LOGGER.error(f'Discharge Rate not set')
             return
-        self.change_settings(mode=1, charge_limit=100, discharge_limit=discharge_rate, grid_charge_power=0)
+        if discharge_rate <= 0:
+            discharge_rate = 100
+        self.change_settings(mode=1, charge_limit=100, discharge_limit=discharge_rate)
 #        self.set_minimum_reserve(30)
         _LOGGER.info(f"Set discharge mode with limit: {discharge_rate}")
 
@@ -963,7 +1047,7 @@ class Hub:
         if discharge_rate is None:
             _LOGGER.error(f'Discharge Rate not set')
             return
-        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=discharge_rate, grid_charge_power=0)
+        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=discharge_rate)
 #        self.set_minimum_reserve(30)
         _LOGGER.info(f"Set charge/discharge mode. {charge_rate} {charge_rate}")
 
@@ -979,14 +1063,26 @@ class Hub:
 #        self.set_minimum_reserve(99)
         _LOGGER.info(f"Forced charging at {grid_charge_power}")
 
+    def set_grid_discharge_mode(self):
+        grid_discharge_power = self.data.get('grid_discharge_power')
+        if grid_discharge_power is None:
+            _LOGGER.error(f'Grid Discharge Power not set')
+            return
+        if grid_discharge_power == 0:
+            grid_discharge_power = 100
+        charge_rate = grid_discharge_power * -1
+        self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100, grid_discharge_power=grid_discharge_power)
+#        self.set_minimum_reserve(99)
+        _LOGGER.info(f"Forced discharging to grid {grid_discharge_power}")
+
     def set_block_discharge_mode(self):
         charge_rate = self.data.get('charge_limit')
         if charge_rate is None:
             _LOGGER.error(f'charge Rate not set')
             return
-        if charge_rate == 0:
+        if charge_rate <= 0:
             charge_rate = 100
-        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=0, grid_charge_power=0)
+        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=0)
  #       self.set_minimum_reserve(30)
         _LOGGER.info(f"blocked discharging")
 
@@ -995,8 +1091,13 @@ class Hub:
         if discharge_rate is None:
             _LOGGER.error(f'Discharge Rate not set')
             return
-        if discharge_rate == 0:
+        if discharge_rate <= 0:
             discharge_rate = 100
-        self.change_settings(mode=3, charge_limit=0, discharge_limit=discharge_rate, grid_charge_power=0)
+        self.change_settings(mode=3, charge_limit=0, discharge_limit=discharge_rate)
  #       self.set_minimum_reserve(30)
         _LOGGER.info(f"Block charging at {discharge_rate}")
+
+    def set_calibrate_mode(self):
+        #self.set_minimum_reserve(30)
+        self.change_settings(mode=2, charge_limit=100, discharge_limit=-100, grid_charge_power=100)
+        _LOGGER.info(f"Auto mode")

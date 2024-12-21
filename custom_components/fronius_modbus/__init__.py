@@ -11,9 +11,8 @@ from homeassistant.const import Platform
 from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from .const import (
     DOMAIN,
-    CONF_MODBUS_ADDRESS,
-    CONF_METER_MODBUS_ADDRESS,
-    CONF_STORAGE_MODBUS_ADDRESS,
+    CONF_INVERTER_UNIT_ID,
+    CONF_METER_UNIT_ID,
 )
 
 from . import hub
@@ -33,17 +32,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
     host = entry.data[CONF_HOST]
     name = entry.data[CONF_NAME]
     port = entry.data[CONF_PORT]
-    address = entry.data.get(CONF_MODBUS_ADDRESS, 1)
-    meter_addresses = [entry.data.get(CONF_METER_MODBUS_ADDRESS, 1)]
-    storage_addresses = [entry.data.get(CONF_STORAGE_MODBUS_ADDRESS, 1)]
+    inverter_unit_id = entry.data.get(CONF_INVERTER_UNIT_ID, 1)
+    meter_unit_ids = [entry.data.get(CONF_METER_UNIT_ID, 1)]
     scan_interval = entry.data[CONF_SCAN_INTERVAL]
 
     _LOGGER.debug("Setup %s.%s", DOMAIN, name)
 
     # Store an instance of the "connecting" class that does the work of speaking
     # with your actual devices.
-    entry.runtime_data = hub.Hub(hass = hass, name = name, host = host, port = port, address = address, meter_addresses=meter_addresses, storage_addresses=storage_addresses, scan_interval = scan_interval)
+    entry.runtime_data = hub.Hub(hass = hass, name = name, host = host, port = port, inverter_unit_id=inverter_unit_id, meter_unit_ids=meter_unit_ids, scan_interval = scan_interval)
     
+    await entry.runtime_data.init_data()
+
     # This creates each HA object for each platform your device requires.
     # It's done by calling the `async_setup_entry` function in each platform module.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

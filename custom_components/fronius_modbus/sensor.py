@@ -5,15 +5,11 @@ import logging
 from typing import Optional, Dict, Any
 
 from homeassistant.components.sensor import (
-#    PLATFORM_SCHEMA,
     SensorEntity,
-    SensorDeviceClass,
-    SensorStateClass
 )
-
-from homeassistant.const import UnitOfTemperature
+#from homeassistant.const import UnitOfTemperature
 from homeassistant.const import CONF_NAME #, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+#from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.icon import icon_for_battery_level
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -22,12 +18,8 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.core import callback
 #from homeassistant.util import dt as dt_util
 
-
 from . import HubConfigEntry
 from .const import (
-    DOMAIN,
-    CONNECTION_MODBUS,
-    ATTR_MANUFACTURER,
     INVERTER_SENSOR_TYPES,
     METER_SENSOR_TYPES,
     STORAGE_SENSOR_TYPES,
@@ -139,7 +131,6 @@ class FroniusModbusSensor(SensorEntity):
     @callback
     def _update_state(self):
         if self._key in self._hub.data:
-            #_LOGGER.info(f"modbus referesh sensor {self._key} {self._state}")
             self._state = self._hub.data[self._key]
 
             self._icon = icon_for_battery_level(
@@ -153,8 +144,6 @@ class FroniusModbusSensor(SensorEntity):
 
     @property
     def unique_id(self) -> Optional[str]:
-        #return f"{self._key}"
-        #_LOGGER.info(f'unique_id {self._platform_name}_{self._key} {self.device_info} {self._name}')
         return f"{self._platform_name}_{self._key}"
 
     @property

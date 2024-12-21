@@ -15,12 +15,10 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_PORT,
-    DEFAULT_MODBUS_ADDRESS,
-    DEFAULT_METER_MODBUS_ADDRESS,
-    DEFAULT_STORAGE_MODBUS_ADDRESS,
-    CONF_MODBUS_ADDRESS,
-    CONF_METER_MODBUS_ADDRESS,
-    CONF_STORAGE_MODBUS_ADDRESS,
+    DEFAULT_INVERTER_UNIT_ID,
+    DEFAULT_METER_UNIT_ID,
+    CONF_INVERTER_UNIT_ID,
+    CONF_METER_UNIT_ID,
     SUPPORTED_MANUFACTURERS,
     SUPPORTED_MODELS,
 )
@@ -45,9 +43,8 @@ DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-        vol.Optional(CONF_MODBUS_ADDRESS, default=DEFAULT_MODBUS_ADDRESS): int,
-        vol.Optional(CONF_METER_MODBUS_ADDRESS, default=DEFAULT_METER_MODBUS_ADDRESS): int,
-        vol.Optional(CONF_STORAGE_MODBUS_ADDRESS, default=DEFAULT_STORAGE_MODBUS_ADDRESS): int,
+        vol.Optional(CONF_INVERTER_UNIT_ID, default=DEFAULT_INVERTER_UNIT_ID): int,
+        vol.Optional(CONF_METER_UNIT_ID, default=DEFAULT_METER_UNIT_ID): int,
         vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): int,
     }
 )
@@ -59,25 +56,23 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     """
     # Validate the data can be used to set up a connection.
 
-    # This is a simple example to show an error in the UI for a short hostname
-    # The exceptions are defined at the end of this file, and are used in the
-    # `async_step_user` method below.
     if len(data[CONF_HOST]) < 3:
         raise InvalidHost
     if data[CONF_PORT] > 65535:
         raise InvalidPort
     
-    meter_addresses = [data[CONF_METER_MODBUS_ADDRESS]]
-    storage_addresses = [data[CONF_STORAGE_MODBUS_ADDRESS]]
+    meter_addresses = [data[CONF_METER_UNIT_ID]]
 
-    all_addresses = meter_addresses + storage_addresses + [data[CONF_MODBUS_ADDRESS]]
+    all_addresses = meter_addresses + [data[CONF_INVERTER_UNIT_ID]] 
 
     if len(all_addresses) > len(set(all_addresses)):
         _LOGGER.error(f"Modbus addresses are not unique {all_addresses}")
         raise AddressesNotUnique
 
     try:
-        hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_MODBUS_ADDRESS], meter_addresses, storage_addresses, data[CONF_SCAN_INTERVAL])
+        hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_INVERTER_UNIT_ID], meter_addresses, data[CONF_SCAN_INTERVAL])
+
+        await hub.init_data()
     except Exception as e:
         # If there is an error, raise an exception to notify HA that there was a
         # problem. The UI will also show there was a problem
@@ -103,8 +98,8 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
             supported = True
     
     if not supported:
-        _LOGGER.error(f"Unsupported model {model}")
-        raise UnsupportedHardware
+        _LOGGER.warning(f"Untested model {model}")
+        #raise UnsupportedHardware
 
     #result = await hub.test_connection()
     #if not result:
