@@ -33,6 +33,7 @@ And turn on:
 | PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 | Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
 | Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
+| Grid Discharge Power | The relative discharging power when the storage is being discharged to the grid. |
 | Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
 
 ### Storage Control Modes
@@ -43,31 +44,35 @@ And turn on:
 | Discharge Limit | The storage can be charged with PV power and discharged at a limited rate. |
 | PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. |
 | Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'.  |
+| Discharge to Grid | The storage will discharge to the gird using the discharge rate from 'Gird Discharge Power'. |
 | Block discharging | The storage can only be charged with PV power. |
 | Block charging | The can only be discharged and won't be charged with PV power. |
 
 ### Controls used by Modes
-| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Minimum Reserve | 
-| --- | --- | --- | --- | --- | 
-| Automatic | Ignored (100%) | Ignored (100%) | Ignored (0%) | Used | 
-| PV Charge Limit | Used | Ignored (100%) | Ignored  (0%) | Used | 
-| Discharge Limit  | Ignored (100%) | Used | Ignored (0%) | Used | 
-| PV Charge and Discharge Limit  | Used | Used | Ignored (0%) | Used | 
-| Charge from Grid | Ignored | Ignored | Used | Used | 
-| Block discharging | Used | Ignored (0%) | Ignored (0%) | Used | 
-| Block charging | Ignored (0%) | Used | Ignored (0%) | Used | 
+| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Grid Discharge Power | Minimum Reserve | 
+| --- | --- | --- | --- | --- | --- |
+| Auto | Ignored (100%) | Ignored (100%) | Ignored (0%) | Ignored (0%) | Used | 
+| PV Charge Limit | Used | Ignored (100%) | Ignored (0%) | Ignored (0%) | Used |
+| Discharge Limit  | Ignored (100%) | Used | Ignored (0%) | Ignored (0%) | Used |
+| PV Charge and Discharge Limit  | Used | Used | Ignored (0%) | Ignored (0%) | Used |
+| Charge from Grid | Ignored | Ignored | Used | Ignored (0%) | Used |
+| Charge from Grid | Ignored | Ignored | Ignored (0%) | Used | Used |
+| Block discharging | Used | Ignored (0%) | Ignored (0%) | Ignored (0%) | Used |
+| Block charging | Ignored (0%) | Used | Ignored (0%) | Ignored (0%) | Used |
 
 ### Sensors
 | Entity  | Description |
 | --- | --- |
-To come!
+| Charge Status | Holding / Charging / Discharging |
+| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below |
+| State of Charge | The current battery level |
 
 ### Diagnostic
 | Entity  | Description |
 | --- | --- |
 To come!
 
-# Example Devices
+# Example Devices (Outdated screenshots!)
 
 Battery Storage
 ![battery storage](images/example_batterystorage0.png?raw=true "storage")
