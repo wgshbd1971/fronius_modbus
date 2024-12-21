@@ -33,6 +33,7 @@ And turn on:
 | PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 | Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
 | Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
+| Grid Discharge Power | The relative discharging power when the storage is being discharged to the grid. |
 | Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
 
 ### Storage Control Modes
