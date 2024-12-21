@@ -72,7 +72,7 @@ And turn on:
 | --- | --- |
 To come!
 
-# Example Devices
+# Example Devices (Outdated screenshots!)
 
 Battery Storage
 ![battery storage](images/example_batterystorage0.png?raw=true "storage")
