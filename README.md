@@ -62,6 +62,7 @@ And turn on:
 
 ### Fronius Web UI mapping
 | Web UI name | Integration Control | Integration Mode |
+| --- | --- | --- |
 | Max. charging power | PV Charge Limit | PV Charge Limit |
 | Min. charging power | Grid Charging Power | Charge from Grid |
 | Max. discharging power | Discharge Limit | Discharge Limit |
