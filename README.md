@@ -40,8 +40,8 @@ And turn on:
 | Mode  | Description |
 | --- | --- |
 | Auto  | The storage will allow charging and discharging up to the minimum reserve. |
-| PV Charge Limit | The storage can be charged with PV power at a limited rate. |
-| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate. |
+| PV Charge Limit | The storage can be charged with PV power at a limited rate.  |
+| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate.  in Fronius Web UI |
 | PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. |
 | Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'.  |
 | Discharge to Grid | The storage will discharge to the gird using the discharge rate from 'Gird Discharge Power'. |
@@ -59,6 +59,14 @@ And turn on:
 | Charge from Grid | Ignored | Ignored | Ignored (0%) | Used | Used |
 | Block discharging | Used | Ignored (0%) | Ignored (0%) | Ignored (0%) | Used |
 | Block charging | Ignored (0%) | Used | Ignored (0%) | Ignored (0%) | Used |
+
+### Fronius Web UI mapping
+| Web UI name | Integration Control | Integration Mode |
+| --- | --- | --- |
+| Max. charging power | PV Charge Limit | PV Charge Limit |
+| Min. charging power | Grid Charging Power | Charge from Grid |
+| Max. discharging power | Discharge Limit | Discharge Limit |
+| Min. discharging power | Grid Discharge Power | Grid Discharge Power | 
 
 ### Sensors
 | Entity  | Description |
