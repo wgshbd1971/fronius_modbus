@@ -8,27 +8,22 @@ import operator
 import threading
 from datetime import timedelta
 from typing import Optional
-#import sys
-#sys.set_int_max_str_digits(0)
 
-#import homeassistant.helpers.config_validation as cv
-#from homeassistant.config_entries import ConfigEntry
-#from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
-#from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import HomeAssistant
 
 from pymodbus.client import ModbusTcpClient
-from pymodbus.constants import Endian
-from pymodbus.payload import BinaryPayloadDecoder
+from pymodbus.exceptions import ModbusIOException
 
 from .const import (
     DOMAIN,
     INVERTER_ADDRESS,
     MPPT_ADDRESS,
-    BASE_INFO_ADDRESS,
-    STORAGE_INFO_ADDRESS,
+    COMMON_ADDRESS,
+    NAMEPLATE_ADDRESS,
+    STORAGE_ADDRESS,
+    METER_ADDRESS,
     STORAGE_CONTROL_MODE_ADDRESS,
     MINIMUM_RESERVE_ADDRESS,
     DISCHARGE_RATE_ADDRESS,
@@ -36,7 +31,6 @@ from .const import (
     STORAGE_CONTROL_MODE,
     CHARGE_STATUS,
     CHARGE_GRID_STATUS,
-    ATTR_MANUFACTURER,
     STORAGE_EXT_CONTROL_MODE,
 )
 
@@ -68,13 +62,14 @@ class Hub:
         self.mppt_configured = False
         self.storage_configured = False
         self.storage_extended_control_mode = 0
+        self._bydclient = None
 
 
     async def init_data(self):
         try: 
             result = self.read_device_info_data(prefix='i_', unit_id=self._inverter_unit_id)
         except Exception as e:
-            _LOGGER.error(f"Error reading inverter info {self._host}:{self._port} unit id: {self._inverter_unit_id}")
+            _LOGGER.error(f"Error reading inverter info {self._host}:{self._port} unit id: {self._inverter_unit_id}", exc_info=True)
             raise Exception(f"Error reading inverter info unit id: {self._inverter_unit_id}")
         if result == False:
             _LOGGER.error(f"Empty inverter info {self._host}:{self._port} unit id: {self._inverter_unit_id}")
@@ -97,15 +92,16 @@ class Hub:
             try:
                 self.read_device_info_data(prefix=f'm{i}_', unit_id=unit_id)
             except Exception as e:
-                _LOGGER.info(f"Error reading meter info unit id: {unit_id}")
+                _LOGGER.info(f"Error reading meter info unit id: {unit_id}", exc_info=True)
             i += 1
 
-        try:
-            if self.read_inverter_storage_data():
-                self.storage_configured = True
-                result : bool = await self._hass.async_add_executor_job(self.get_json_storage_info)
-        except Exception as e:
-            _LOGGER.info(f"No storage found")
+        if self.read_inverter_nameplate_data() == False:
+            _LOGGER.error(f"Error reading nameplate data", exc_info=True)
+
+        if self.storage_configured:
+            result : bool = await self._hass.async_add_executor_job(self.get_json_storage_info)                
+
+        _LOGGER.debug(f"Init done. data: {self.data}")
 
         return True
 
@@ -134,7 +130,7 @@ class Hub:
     def get_device_info_meter(self, id) -> dict:
          return {
             "identifiers": {(DOMAIN, f'{self._name}_meter{id}')},
-            "name": f'Meter {id}',
+            "name": f'Meter {id} {self.data.get(f'm{id}_options')}',
             "manufacturer": self.data.get(f'm{id}_manufacturer'),
             "model": self.data.get(f'm{id}_model'),
             "serial_number": self.data.get(f'm{id}_serial'),
@@ -208,10 +204,10 @@ class Hub:
             details = data['Body']['Data']['1']['Controller']['Details']
             self.data['s_manufacturer'] = details['Manufacturer']
             self.data['s_model'] = details['Model']
-            self.data['s_serial'] = details['Serial'].trim()
+            self.data['s_serial'] = str(details['Serial']).strip()
  
         except Exception as e:
-            _LOGGER.error(f"Error storage json data {url} {e}")
+            _LOGGER.error(f"Error storage json data {url} {e}", exc_info=True)
 
     def _refresh_modbus_data(self, _now: Optional[int] = None) -> bool:
         """Time to update."""
@@ -222,13 +218,12 @@ class Hub:
             #if not connected, skip
             return False
         
-
         if self.meter_configured:
             for meter_address in self._meter_unit_ids:
                 try:
                     update_result = self.read_meter_data(meter_prefix="m1_", unit_id=meter_address)
                 except Exception as e:
-                    _LOGGER.error(f"Error reading meter data {meter_address}. {e}")
+                    _LOGGER.error(f"Error reading meter data {meter_address}.", exc_info=True)
                     #update_result = False
         
         if self.mppt_configured:
@@ -287,15 +282,29 @@ class Hub:
 
     def read_holding_registers(self, unit_id, address, count):
         """Read holding registers."""
-        _LOGGER.info(f"read registers a: {address} s: {unit_id} c {count}")
+        _LOGGER.debug(f"read registers a: {address} s: {unit_id} c {count}")
         with self._lock:
             return self._client.read_holding_registers(
                 address=address, count=count, slave=unit_id
             )
 
+    def get_registers(self, unit_id, address, count, retries = 0):
+        data = self.read_holding_registers( unit_id=unit_id, address=address, count=count)
+        if data.isError():
+            if isinstance(data,ModbusIOException):
+                if retries < 1:
+                    _LOGGER.debug(f"IO Error: {data}. Retrying...")
+                    return self.get_registers(address=address, count=count, retries = retries + 1)
+                else:
+                    _LOGGER.error(f"error reading register: {address} count: {count} unit id: {self._unit_id} error: {data} ")
+            else:
+                _LOGGER.error(f"error reading register: {address} count: {count} unit id: {self._unit_id} error: {data} ")
+            return None
+        return data.registers
+    
     def write_registers(self, unit_id, address, payload):
         """Write registers."""
-        _LOGGER.info(f"write registers a: {address} p: {payload}")
+        _LOGGER.debug(f"write registers a: {address} p: {payload}")
         with self._lock:
             return self._client.write_registers(
                 address=address, values=payload, slave=unit_id
@@ -309,219 +318,91 @@ class Hub:
             return
         filter = ''.join([chr(i) for i in range(0, 32)])
         return value.translate(str.maketrans('', '', filter)).strip()
+    
+    def get_string_from_registers(self, regs):
+        return self.strip_escapes(self._client.convert_from_registers(regs, data_type = self._client.DATATYPE.STRING))
 
     def read_device_info_data(self, prefix, unit_id):
-        data = self.read_holding_registers(
-            unit_id=unit_id, address=BASE_INFO_ADDRESS, count=65
-        )
-        if data.isError():
-            _LOGGER.error(f"error reading device info {prefix} {unit_id} {BASE_INFO_ADDRESS}")
+        regs = self.get_registers(unit_id=unit_id, address=COMMON_ADDRESS, count=65)
+        if regs is None:
             return False
 
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            data.registers, byteorder=Endian.BIG
-        )
-
-        manufacturer = self.strip_escapes(decoder.decode_string(32).decode('unicode_escape'))
-        model = self.strip_escapes(decoder.decode_string(32).decode('unicode_escape'))
-        if prefix == 'm1_':
-             name = decoder.decode_string(16).decode('unicode_escape')
-        else:
-            decoder.skip_bytes(16)
-            name = ''
-        sw_version = self.strip_escapes(decoder.decode_string(16).decode('unicode_escape'))
-        serial = self.strip_escapes(decoder.decode_string(32).decode('unicode_escape'))
-
-        _LOGGER.info(f"manufacturer {manufacturer}")
-        _LOGGER.info(f"model {model}")
-        _LOGGER.info(f"name {name}")
-        _LOGGER.info(f"sw_version {sw_version}")
-        _LOGGER.info(f"serial {serial}")
+        manufacturer = self.get_string_from_registers(regs[0:16])
+        model = self.get_string_from_registers(regs[16:32])
+        options = self.get_string_from_registers(regs[32:40])
+        sw_version = self.get_string_from_registers(regs[40:48])
+        serial =  self.get_string_from_registers(regs[48:64])
+        modbus_id = self._client.convert_from_registers(regs[64:65], data_type = self._client.DATATYPE.UINT16)
 
         self.data[prefix + 'manufacturer'] = manufacturer
         self.data[prefix + 'model'] = model
+        self.data[prefix + 'options'] = options
         self.data[prefix + 'sw_version'] = sw_version
         self.data[prefix + 'serial'] = serial
-        self.data[prefix + 'unit_id'] = unit_id
+        self.data[prefix + 'unit_id'] = modbus_id
 
         return True
 
     def read_inverter_data(self):
-        inverter_data = self.read_holding_registers(
-            unit_id=self._inverter_unit_id, address=INVERTER_ADDRESS, count=38
-        )
-        if inverter_data.isError():
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=INVERTER_ADDRESS, count=38)
+        if regs is None:
             return False
 
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            inverter_data.registers, byteorder=Endian.BIG
-        )
-        # accurrent = decoder.decode_16bit_uint()
-        # accurrenta = decoder.decode_16bit_uint()
-        # accurrentb = decoder.decode_16bit_uint()
-        # accurrentc = decoder.decode_16bit_uint()
-        # accurrentsf = decoder.decode_16bit_int()
+        A = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        A_SF = self._client.convert_from_registers(regs[4:5], data_type = self._client.DATATYPE.INT16)
+        acpower = self.calculate_value(A, A_SF)
+        self.data["acpower"] = round(acpower, abs(A_SF))
 
-        # accurrent = self.calculate_value(accurrent, accurrentsf)
-        # accurrenta = self.calculate_value(accurrenta, accurrentsf)
-        # accurrentb = self.calculate_value(accurrentb, accurrentsf)
-        # accurrentc = self.calculate_value(accurrentc, accurrentsf)
-
-        # self.data["accurrent"] = round(accurrent, abs(accurrentsf))
-        # self.data["accurrenta"] = round(accurrenta, abs(accurrentsf))
-        # self.data["accurrentb"] = round(accurrentb, abs(accurrentsf))
-        # self.data["accurrentc"] = round(accurrentc, abs(accurrentsf))
-
-        # acvoltageab = decoder.decode_16bit_uint()
-        # acvoltagebc = decoder.decode_16bit_uint()
-        # acvoltageca = decoder.decode_16bit_uint()
-        # acvoltagean = decoder.decode_16bit_uint()
-        # acvoltagebn = decoder.decode_16bit_uint()
-        # acvoltagecn = decoder.decode_16bit_uint()
-        # acvoltagesf = decoder.decode_16bit_int()
-
-        # acvoltageab = self.calculate_value(acvoltageab, acvoltagesf)
-        # acvoltagebc = self.calculate_value(acvoltagebc, acvoltagesf)
-        # acvoltageca = self.calculate_value(acvoltageca, acvoltagesf)
-        # acvoltagean = self.calculate_value(acvoltagean, acvoltagesf)
-        # acvoltagebn = self.calculate_value(acvoltagebn, acvoltagesf)
-        # acvoltagecn = self.calculate_value(acvoltagecn, acvoltagesf)
-
-        # self.data["acvoltageab"] = round(acvoltageab, abs(acvoltagesf))
-        # self.data["acvoltagebc"] = round(acvoltagebc, abs(acvoltagesf))
-        # self.data["acvoltageca"] = round(acvoltageca, abs(acvoltagesf))
-        # self.data["acvoltagean"] = round(acvoltagean, abs(acvoltagesf))
-        # self.data["acvoltagebn"] = round(acvoltagebn, abs(acvoltagesf))
-        # self.data["acvoltagecn"] = round(acvoltagecn, abs(acvoltagesf))
-
-        decoder.skip_bytes(24)
-        acpower = decoder.decode_16bit_int()
-        acpowersf = decoder.decode_16bit_int()
-        acpower = self.calculate_value(acpower, acpowersf)
-        self.data["acpower"] = round(acpower, abs(acpowersf))
-
-        # acfreq = decoder.decode_16bit_uint()
-        # acfreqsf = decoder.decode_16bit_int()
-        # acfreq = self.calculate_value(acfreq, acfreqsf)
-        # self.data["acfreq"] = round(acfreq, abs(acfreqsf))
-
-        # acva = decoder.decode_16bit_int()
-        # acvasf = decoder.decode_16bit_int()
-        # acva = self.calculate_value(acva, acvasf)
-        # self.data["acva"] = round(acva, abs(acvasf))
-
-        # acvar = decoder.decode_16bit_int()
-        # acvarsf = decoder.decode_16bit_int()
-        # acvar = self.calculate_value(acvar, acvarsf)
-        # self.data["acvar"] = round(acvar, abs(acvarsf))
-
-        # acpf = decoder.decode_16bit_int()
-        # acpfsf = decoder.decode_16bit_int()
-        # acpf = self.calculate_value(acpf, acpfsf)
-        # self.data["acpf"] = round(acpf, abs(acpfsf))
-
-        decoder.skip_bytes(16)
-        acenergy = decoder.decode_32bit_uint()
-        acenergysf = decoder.decode_16bit_int()
-        acenergy = self.calculate_value(acenergy, acenergysf)
+        WH = self._client.convert_from_registers(regs[22:24], data_type = self._client.DATATYPE.UINT32)
+        WH_SF = self._client.convert_from_registers(regs[24:25], data_type = self._client.DATATYPE.INT16)
+        acenergy = self.calculate_value(WH, WH_SF)
         self.data["acenergy"] = acenergy 
 
-        #dccurrent = decoder.decode_16bit_uint()
-        #dccurrentsf = decoder.decode_16bit_int()
-        #dccurrent = self.calculate_value(dccurrent, dccurrentsf)
-        #self.data["dccurrent"] = round(dccurrent, abs(dccurrentsf))
-
-        #dcvoltage = decoder.decode_16bit_uint()
-        #dcvoltagesf = decoder.decode_16bit_int()
-        #dcvoltage = self.calculate_value(dcvoltage, dcvoltagesf)
-        #self.data["dcvoltage"] = round(dcvoltage, abs(dcvoltagesf))
-
-        #dcpower = decoder.decode_16bit_int()
-        #dcpowersf = decoder.decode_16bit_int()
-        #dcpower = self.calculate_value(dcpower, dcpowersf)
-        #self.data["dcpower"] = round(dcpower, abs(dcpowersf))
-
-        decoder.skip_bytes(12)
-        tempcab = decoder.decode_16bit_int()
-        decoder.skip_bytes(6)
-        tempsf = decoder.decode_16bit_int()
-        tempcab = self.calculate_value(tempcab, tempsf)
+        TmpCab = self._client.convert_from_registers(regs[31:32], data_type = self._client.DATATYPE.INT16)
+        Tmp_SF = self._client.convert_from_registers(regs[35:36], data_type = self._client.DATATYPE.INT16)
+        tempcab = self.calculate_value(TmpCab, Tmp_SF)
         self.data['tempcab'] = tempcab
-        #_LOGGER.info(f"tempcab {tempcab}")
 
-        status = decoder.decode_16bit_int()
-        self.data["status"] = status
-        statusvendor = decoder.decode_16bit_int()
-        self.data["statusvendor"] = statusvendor
+        St = self._client.convert_from_registers(regs[36:37], data_type = self._client.DATATYPE.UINT16)
+        self.data["status"] = St
+        StVnd = self._client.convert_from_registers(regs[37:38], data_type = self._client.DATATYPE.UINT16)
+        self.data["statusvendor"] = StVnd
 
         return True
 
     def read_mppt_data(self):
-
-        data = self.read_holding_registers(
-            unit_id=self._inverter_unit_id, address=MPPT_ADDRESS, count=88
-        )
-        if data.isError():
-            _LOGGER.error(f"modbus mppt error {data}")
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=MPPT_ADDRESS, count=88)
+        if regs is None:
             return False
 
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            data.registers, byteorder=Endian.BIG
-        )
-
-        #_LOGGER.info(f"registers {data.registers}")
-
-        #dca_sf - 1
-        #dcv_sf - 1
-        decoder.skip_bytes(4)    
-        dcw_sf = decoder.decode_16bit_int()
-        dcwh_sf = decoder.decode_16bit_int()
-        #Evt - 2
-        decoder.skip_bytes(4)    
-        modules = decoder.decode_16bit_int()
-        #_LOGGER.info(f"modules {modules}")
-        if modules != 4:
-            _LOGGER.error(f"Integration only supports 4 mppt modules. Found only: {modules}")
+        DCW_SF = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.INT16)
+        DCWH_SF = self._client.convert_from_registers(regs[3:4], data_type = self._client.DATATYPE.INT16)
+        N = self._client.convert_from_registers(regs[6:7], data_type = self._client.DATATYPE.UINT16)
+        if N != 4:
+            _LOGGER.error(f"Integration only supports 4 mppt modules. Found only: {N}")
             return
 
-        #TmsPer - 1
-        #module/1/ID - 1
-        #module/1/IDStr - 8
-        #module/1/DCA - 1
-        #module/1/DCV - 1
-        decoder.skip_bytes(24)    
-        mppt1_power = decoder.decode_16bit_uint()
-        mppt1_lfte = decoder.decode_32bit_uint()
-        #module/1/Tms - 2
-        #module/1/Tmp not supported - 1
-        #module/1/DCSt not supported - 1
-        #module/1/DCEvt not supported - 2
+        module_1_DCW = self._client.convert_from_registers(regs[19:20], data_type = self._client.DATATYPE.UINT16)
+        module_1_DCWH = self._client.convert_from_registers(regs[20:22], data_type = self._client.DATATYPE.UINT32)
 
-        #module/2/ID - 1
-        #module/2/IDStr - 8
-        #module/2/DCA - 1
-        #module/2/DCV - 1
-        decoder.skip_bytes(34)
-        mppt2_power = decoder.decode_16bit_uint()
-        mppt2_lfte = decoder.decode_32bit_uint()
+        module_2_DCW = self._client.convert_from_registers(regs[39:40], data_type = self._client.DATATYPE.UINT16)
+        module_2_DCWH = self._client.convert_from_registers(regs[40:42], data_type = self._client.DATATYPE.UINT32)
 
-        decoder.skip_bytes(34)
-        mppt3_power = decoder.decode_16bit_uint()
-        mppt3_lfte = decoder.decode_32bit_uint()
+        module_3_DCW = self._client.convert_from_registers(regs[59:60], data_type = self._client.DATATYPE.UINT16)
+        module_3_DCWH = self._client.convert_from_registers(regs[60:62], data_type = self._client.DATATYPE.UINT32)
 
-        decoder.skip_bytes(34)
-        mppt4_power = decoder.decode_16bit_uint()
-        mppt4_lfte = decoder.decode_32bit_uint()
+        module_4_DCW = self._client.convert_from_registers(regs[79:80], data_type = self._client.DATATYPE.UINT16)
+        module_4_DCWH = self._client.convert_from_registers(regs[80:82], data_type = self._client.DATATYPE.UINT32)
 
-        mppt1_power = self.calculate_value(mppt1_power, dcw_sf)
-        mppt2_power = self.calculate_value(mppt2_power, dcw_sf)
-        mppt3_power = self.calculate_value(mppt3_power, dcw_sf)
-        mppt4_power = self.calculate_value(mppt4_power, dcw_sf)
+        mppt1_power = self.calculate_value(module_1_DCW, DCW_SF)
+        mppt2_power = self.calculate_value(module_2_DCW, DCW_SF)
+        mppt3_power = self.calculate_value(module_3_DCW, DCW_SF)
+        mppt4_power = self.calculate_value(module_4_DCW, DCW_SF)
 
-        mppt1_lfte = self.calculate_value(mppt1_lfte, dcwh_sf)
-        mppt2_lfte = self.calculate_value(mppt2_lfte, dcwh_sf)
-        mppt3_lfte = self.calculate_value(mppt3_lfte, dcwh_sf)
-        mppt4_lfte = self.calculate_value(mppt4_lfte, dcwh_sf)
+        mppt1_lfte = self.calculate_value(module_1_DCWH, DCWH_SF)
+        mppt2_lfte = self.calculate_value(module_2_DCWH, DCWH_SF)
+        mppt3_lfte = self.calculate_value(module_3_DCWH, DCWH_SF)
+        mppt4_lfte = self.calculate_value(module_4_DCWH, DCWH_SF)
 
         self.data['mppt1_power'] = mppt1_power
         self.data['mppt2_power'] = mppt2_power
@@ -535,102 +416,85 @@ class Hub:
         self.data['mppt3_lfte'] = mppt3_lfte
         self.data['mppt4_lfte'] = mppt4_lfte
 
-        #_LOGGER.info(f"mppt {mppt1_power} {mppt2_power} {mppt3_power} {mppt4_power}")
-
         return True
 
-    # def read_storage_data(self):
-    #     for i in range(2,247):
-    #         self.read_storage_data_id(i)
+    def read_inverter_nameplate_data(self):
+        """start reading storage data"""
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=NAMEPLATE_ADDRESS, count=120)
+        if regs is None:
+            return False
 
-    # def read_storage_data_id(self, id):
-    #     """start reading storage data"""
-    #     address = 0
-    #     data = self.read_holding_registers(
-    #         unit_id=id, address=address, count=102
-    #     )
-    #     if data.isError():
-    #         _LOGGER.error(f"modbus storage error id:{id} data:{data}")
-    #         return False
+        # DERTyp: Type of DER device. Default value is 4 to indicate PV device.
+        DERTyp = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        # WHRtg: Nominal energy rating of storage device.
+        WHRtg = self._client.convert_from_registers(regs[17:18], data_type = self._client.DATATYPE.UINT16)
+        # MaxChaRte: Maximum rate of energy transfer into the storage device.
+        MaxChaRte = self._client.convert_from_registers(regs[21:22], data_type = self._client.DATATYPE.UINT16)
+        # MaxDisChaRte: Maximum rate of energy transfer out of the storage device.
+        MaxDisChaRte = self._client.convert_from_registers(regs[23:24], data_type = self._client.DATATYPE.UINT16)
 
-    #     decoder = BinaryPayloadDecoder.fromRegisters(
-    #         data.registers, byteorder=Endian.BIG
-    #     )
-
-    #     bmuSerial = decoder.decode_string(18)
-    #     #temp = decoder.decode_16bit_float()
-    #     _LOGGER.error(f"storage serial {bmuSerial}")
+        if DERTyp == 82:
+            self.storage_configured = True
+        self.data['WHRtg'] = WHRtg
+        self.data['MaxChaRte'] = MaxChaRte
+        self.data['MaxDisChaRte'] = MaxDisChaRte
+    
+        return True
 
     def read_inverter_storage_data(self):
         """start reading storage data"""
-        address = STORAGE_INFO_ADDRESS
-        data = self.read_holding_registers(
-            unit_id=self._inverter_unit_id, address=address, count=24
-        )
-        if data.isError():
-            _LOGGER.error(f"modbus storage error {data}")
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=STORAGE_ADDRESS, count=24)
+        if regs is None:
             return False
-
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            data.registers, byteorder=Endian.BIG
-        )
-
-        # WChaMax
-        max_charge = decoder.decode_16bit_int()
-        # WChaGra
-        power = decoder.decode_16bit_int()
-        # WDisChaGra
-        dummy3 = decoder.decode_16bit_int()
-        # StorCtl_Mod
-        storage_control_mode = decoder.decode_16bit_int()
-        # VAChaMax
-        decoder.skip_bytes(2) # not supported 
-        # MinRsvPct
-        minimum_reserve = decoder.decode_16bit_int()
-        # ChaState
-        charge_state = decoder.decode_16bit_int()
-        # StorAval
-        decoder.skip_bytes(2) # not supported 
-        # InBatV
-        decoder.skip_bytes(2) # not supported 
-        # ChaSt
-        charge_status = decoder.decode_16bit_int()
-        # OutWRte
-        discharge_power = decoder.decode_16bit_int()
-        # InWRte
-        charge_power = decoder.decode_16bit_int()
-        # InOutWRte_WinTms
-        decoder.skip_bytes(2) # not supported 
-        # InOutWRte_RvrtTms
-        dummy10 = decoder.decode_16bit_int()
-        # InOutWRte_RmpTms
-        decoder.skip_bytes(2) # not supported 
+        
+        # WChaMax: Reference Value for maximum Charge and Discharge.
+        max_charge = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        # WChaGra: Setpoint for maximum charging rate. Default is MaxChaRte.
+        WChaGra = self._client.convert_from_registers(regs[1:2], data_type = self._client.DATATYPE.UINT16)
+        # WDisChaGra: Setpoint for maximum discharge rate. Default is MaxDisChaRte.
+        WDisChaGra = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
+        # StorCtl_Mod: Active hold/discharge/charge storage control mode.
+        storage_control_mode = self._client.convert_from_registers(regs[3:4], data_type = self._client.DATATYPE.UINT16)
+        # VAChaMax: not supported
+        # MinRsvPct: Setpoint for minimum reserve for storage as a percentage of the nominal maximum storage.
+        minimum_reserve = self._client.convert_from_registers(regs[5:6], data_type = self._client.DATATYPE.UINT16)
+        # ChaState: Currently available energy as a percent of the capacity rating.
+        charge_state = self._client.convert_from_registers(regs[6:7], data_type = self._client.DATATYPE.UINT16)
+        # StorAval: not supported 
+        # InBatV: not supported
+        # ChaSt:  Charge status of storage device.
+        charge_status = self._client.convert_from_registers(regs[9:10], data_type = self._client.DATATYPE.UINT16)
+        # OutWRte: Defines maximum Discharge rate. If not used than the default is 100 and WChaMax defines max. Discharge rate.
+        discharge_power = self._client.convert_from_registers(regs[10:11], data_type = self._client.DATATYPE.INT16)
+        # InWRte: Defines maximum Charge rate. If not used than the default is 100 and WChaMax defines max. Charge rate.
+        charge_power = self._client.convert_from_registers(regs[11:12], data_type = self._client.DATATYPE.INT16)
+        # InOutWRte_WinTms: not supported
+        # InOutWRte_RvrtTms: Timeout period for charge/discharge rate.
+        #InOutWRte_RvrtTms = self._client.convert_from_registers(regs[13:14], data_type = self._client.DATATYPE.INT16)
+        # InOutWRte_RmpTms: not supported
         # ChaGriSet
-        charge_grid_set = decoder.decode_16bit_int()
-        # WChaMax_SF
-        max_charge_sf = decoder.decode_16bit_int()
-        # WChaDisChaGra_SF
-        dummy10 = decoder.decode_16bit_int()
-        # VAChaMax_SF
-        decoder.skip_bytes(2) # not supported 
-        # MinRsvPct_SF
-        dummy10 = decoder.decode_16bit_int()
-        # ChaState_SF
-        charge_state_sf = decoder.decode_16bit_int()
-        # StorAval_SF
-        #decoder.skip_bytes(2) # not supported 
-        # InBatV_SF
-        #decoder.skip_bytes(2) # not supported 
-        # InOutWRte_SF
+        charge_grid_set = self._client.convert_from_registers(regs[15:16], data_type = self._client.DATATYPE.UINT16)
+        # WChaMax_SF: Scale factor for maximum charge. 0
+        #max_charge_sf = self._client.convert_from_registers(regs[16:17], data_type = self._client.DATATYPE.INT16)
+        # WChaDisChaGra_SF: Scale factor for maximum charge and discharge rate. 0
+        # VAChaMax_SF: not supported
+        # MinRsvPct_SF: Scale factor for minimum reserve percentage. -2
+        # ChaState_SF: Scale factor for available energy percent. -2
+        #charge_state_sf = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
+        # StorAval_SF: not supported
+        # InBatV_SF: not supported
+        # InOutWRte_SF: Scale factor for percent charge/discharge rate. -2
 
         self.data['grid_charging'] = CHARGE_GRID_STATUS.get(charge_grid_set)
-        self.data['power'] = power
+        #self.data['power'] = power
         self.data['charge_status'] = CHARGE_STATUS.get(charge_status)
         self.data['minimum_reserve'] = minimum_reserve / 100.0
         self.data['discharging_power'] = discharge_power / 100.0
         self.data['charging_power'] = charge_power / 100.0
-        self.data['soc'] = self.calculate_value(charge_state, charge_state_sf)
-        self.data['max_charge'] = self.calculate_value(max_charge, max_charge_sf)
+        self.data['soc'] = self.calculate_value(charge_state, -2)
+        self.data['max_charge'] = max_charge #self.calculate_value(max_charge, max_charge_sf)
+        self.data['WChaGra'] = WChaGra
+        self.data['WDisChaGra'] = WDisChaGra
 
         control_mode = self.data.get('control_mode')
         if control_mode is None or control_mode != STORAGE_CONTROL_MODE.get(storage_control_mode):
@@ -689,276 +553,27 @@ class Hub:
 
         return True
 
-    def read_meter1_data(self):
-        if self.meter_configured:
-            return self.read_meter_data(meter_prefix="m1_", unit_id=200)
-        return True
-
     def read_meter_data(self, meter_prefix, unit_id):
-        """start reading meter  data"""
-        meter_data = self.read_holding_registers(
-            unit_id=unit_id, address=INVERTER_ADDRESS, count=103
-        )
-        if meter_data.isError():
-            _LOGGER.error(f"meter data error {unit_id} {meter_data}")
+        """start reading meter data"""
+        regs = self.get_registers(unit_id=unit_id, address=METER_ADDRESS, count=103)
+        if regs is None:
             return False
-
-        decoder = BinaryPayloadDecoder.fromRegisters(
-            meter_data.registers, byteorder=Endian.BIG
-        )
-        # accurrent = decoder.decode_16bit_int()
-        # accurrenta = decoder.decode_16bit_int()
-        # accurrentb = decoder.decode_16bit_int()
-        # accurrentc = decoder.decode_16bit_int()
-        # accurrentsf = decoder.decode_16bit_int()
-
-        # accurrent = self.calculate_value(accurrent, accurrentsf)
-        # accurrenta = self.calculate_value(accurrenta, accurrentsf)
-        # accurrentb = self.calculate_value(accurrentb, accurrentsf)
-        # accurrentc = self.calculate_value(accurrentc, accurrentsf)
-
-        # self.data[meter_prefix + "accurrent"] = round(accurrent, abs(accurrentsf))
-        # self.data[meter_prefix + "accurrenta"] = round(accurrenta, abs(accurrentsf))
-        # self.data[meter_prefix + "accurrentb"] = round(accurrentb, abs(accurrentsf))
-        # self.data[meter_prefix + "accurrentc"] = round(accurrentc, abs(accurrentsf))
-
-        # acvoltageln = decoder.decode_16bit_int()
-        # acvoltagean = decoder.decode_16bit_int()
-        # acvoltagebn = decoder.decode_16bit_int()
-        # acvoltagecn = decoder.decode_16bit_int()
-        # acvoltagell = decoder.decode_16bit_int()
-        # acvoltageab = decoder.decode_16bit_int()
-        # acvoltagebc = decoder.decode_16bit_int()
-        # acvoltageca = decoder.decode_16bit_int()
-        # acvoltagesf = decoder.decode_16bit_int()
-
-        # acvoltageln = self.calculate_value(acvoltageln, acvoltagesf)
-        # acvoltagean = self.calculate_value(acvoltagean, acvoltagesf)
-        # acvoltagebn = self.calculate_value(acvoltagebn, acvoltagesf)
-        # acvoltagecn = self.calculate_value(acvoltagecn, acvoltagesf)
-        # acvoltagell = self.calculate_value(acvoltagell, acvoltagesf)
-        # acvoltageab = self.calculate_value(acvoltageab, acvoltagesf)
-        # acvoltagebc = self.calculate_value(acvoltagebc, acvoltagesf)
-        # acvoltageca = self.calculate_value(acvoltageca, acvoltagesf)
-
-        # self.data[meter_prefix + "acvoltageln"] = round(acvoltageln, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltagean"] = round(acvoltagean, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltagebn"] = round(acvoltagebn, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltagecn"] = round(acvoltagecn, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltagell"] = round(acvoltagell, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltageab"] = round(acvoltageab, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltagebc"] = round(acvoltagebc, abs(acvoltagesf))
-        # self.data[meter_prefix + "acvoltageca"] = round(acvoltageca, abs(acvoltagesf))
-
-        # acfreq = decoder.decode_16bit_int()
-        # acfreqsf = decoder.decode_16bit_int()
-        # acfreq = self.calculate_value(acfreq, acfreqsf)
-        # self.data[meter_prefix + "acfreq"] = round(acfreq, abs(acfreqsf))
-
-        decoder.skip_bytes(32)
-        acpower = decoder.decode_16bit_int()
-        # acpowera = decoder.decode_16bit_int()
-        # acpowerb = decoder.decode_16bit_int()
-        # acpowerc = decoder.decode_16bit_int()
-        decoder.skip_bytes(6)
-        acpowersf = decoder.decode_16bit_int()
+        
+        acpower = self._client.convert_from_registers(regs[16:17], data_type = self._client.DATATYPE.INT16)
+        acpowersf = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
 
         acpower = self.calculate_value(acpower, acpowersf)
-        # acpowera = self.calculate_value(acpowera, acpowersf)
-        # acpowerb = self.calculate_value(acpowerb, acpowersf)
-        # acpowerc = self.calculate_value(acpowerc, acpowersf)
-
-        #_LOGGER.info(f"m1 {acpower}")
         self.data[meter_prefix + "power"] = round(acpower, abs(acpowersf))
-        # self.data[meter_prefix + "acpowera"] = round(acpowera, abs(acpowersf))
-        # self.data[meter_prefix + "acpowerb"] = round(acpowerb, abs(acpowersf))
-        # self.data[meter_prefix + "acpowerc"] = round(acpowerc, abs(acpowersf))
 
-        # acva = decoder.decode_16bit_int()
-        # acvaa = decoder.decode_16bit_int()
-        # acvab = decoder.decode_16bit_int()
-        # acvac = decoder.decode_16bit_int()
-        # acvasf = decoder.decode_16bit_int()
-
-        # acva = self.calculate_value(acva, acvasf)
-        # acvaa = self.calculate_value(acvaa, acvasf)
-        # acvab = self.calculate_value(acvab, acvasf)
-        # acvac = self.calculate_value(acvac, acvasf)
-
-        # self.data[meter_prefix + "acva"] = round(acva, abs(acvasf))
-        # self.data[meter_prefix + "acvaa"] = round(acvaa, abs(acvasf))
-        # self.data[meter_prefix + "acvab"] = round(acvab, abs(acvasf))
-        # self.data[meter_prefix + "acvac"] = round(acvac, abs(acvasf))
-
-        # acvar = decoder.decode_16bit_int()
-        # acvara = decoder.decode_16bit_int()
-        # acvarb = decoder.decode_16bit_int()
-        # acvarc = decoder.decode_16bit_int()
-        # acvarsf = decoder.decode_16bit_int()
-
-        # acvar = self.calculate_value(acvar, acvarsf)
-        # acvara = self.calculate_value(acvara, acvarsf)
-        # acvarb = self.calculate_value(acvarb, acvarsf)
-        # acvarc = self.calculate_value(acvarc, acvarsf)
-
-        # self.data[meter_prefix + "acvar"] = round(acvar, abs(acvarsf))
-        # self.data[meter_prefix + "acvara"] = round(acvara, abs(acvarsf))
-        # self.data[meter_prefix + "acvarb"] = round(acvarb, abs(acvarsf))
-        # self.data[meter_prefix + "acvarc"] = round(acvarc, abs(acvarsf))
-
-        # acpf = decoder.decode_16bit_int()
-        # acpfa = decoder.decode_16bit_int()
-        # acpfb = decoder.decode_16bit_int()
-        # acpfc = decoder.decode_16bit_int()
-        # acpfsf = decoder.decode_16bit_int()
-
-        # acpf = self.calculate_value(acpf, acpfsf)
-        # acpfa = self.calculate_value(acpfa, acpfsf)
-        # acpfb = self.calculate_value(acpfb, acpfsf)
-        # acpfc = self.calculate_value(acpfc, acpfsf)
-
-        # self.data[meter_prefix + "acpf"] = round(acpf, abs(acpfsf))
-        # self.data[meter_prefix + "acpfa"] = round(acpfa, abs(acpfsf))
-        # self.data[meter_prefix + "acpfb"] = round(acpfb, abs(acpfsf))
-        # self.data[meter_prefix + "acpfc"] = round(acpfc, abs(acpfsf))
-
-        decoder.skip_bytes(30)
-        exported = decoder.decode_32bit_uint()
-        # exporteda = decoder.decode_32bit_uint()
-        # exportedb = decoder.decode_32bit_uint()
-        # exportedc = decoder.decode_32bit_uint()
-        decoder.skip_bytes(12)
-        imported = decoder.decode_32bit_uint()
-        # importeda = decoder.decode_32bit_uint()
-        # importedb = decoder.decode_32bit_uint()
-        # importedc = decoder.decode_32bit_uint()
-        decoder.skip_bytes(12)
-        energywsf = decoder.decode_16bit_int()
+        exported = self._client.convert_from_registers(regs[36:38], data_type = self._client.DATATYPE.UINT32)
+        imported = self._client.convert_from_registers(regs[44:46], data_type = self._client.DATATYPE.UINT32)
+        energywsf = self._client.convert_from_registers(regs[52:53], data_type = self._client.DATATYPE.INT16)
 
         exported = self.calculate_value(exported, energywsf) #self.validate(self.calculate_value(exported, energywsf), ">", 0)
-        # exporteda = self.calculate_value(exporteda, energywsf)
-        # exportedb = self.calculate_value(exportedb, energywsf)
-        # exportedc = self.calculate_value(exportedc, energywsf)
         imported = self.calculate_value(imported, energywsf) #self.validate(self.calculate_value(imported, energywsf), ">", 0)
-        # importeda = self.calculate_value(importeda, energywsf)
-        # importedb = self.calculate_value(importedb, energywsf)
-        # importedc = self.calculate_value(importedc, energywsf)
-
-        # _LOGGER.info(f"m1 exp {exported}")
-        # _LOGGER.info(f"m1 imp {imported}")
 
         self.data[meter_prefix + "exported"] = exported #round(exported * 0.001, 3)
-        # self.data[meter_prefix + "exporteda"] = round(exporteda * 0.001, 3)
-        # self.data[meter_prefix + "exportedb"] = round(exportedb * 0.001, 3)
-        # self.data[meter_prefix + "exportedc"] = round(exportedc * 0.001, 3)
         self.data[meter_prefix + "imported"] = imported #round(imported * 0.001, 3)
-        # self.data[meter_prefix + "importeda"] = round(importeda * 0.001, 3)
-        # self.data[meter_prefix + "importedb"] = round(importedb * 0.001, 3)
-        # self.data[meter_prefix + "importedc"] = round(importedc * 0.001, 3)
-
-        # exportedva = decoder.decode_32bit_uint()
-        # exportedvaa = decoder.decode_32bit_uint()
-        # exportedvab = decoder.decode_32bit_uint()
-        # exportedvac = decoder.decode_32bit_uint()
-        # importedva = decoder.decode_32bit_uint()
-        # importedvaa = decoder.decode_32bit_uint()
-        # importedvab = decoder.decode_32bit_uint()
-        # importedvac = decoder.decode_32bit_uint()
-        # energyvasf = decoder.decode_16bit_int()
-
-        # exportedva = self.calculate_value(exportedva, energyvasf)
-        # exportedvaa = self.calculate_value(exportedvaa, energyvasf)
-        # exportedvab = self.calculate_value(exportedvab, energyvasf)
-        # exportedvac = self.calculate_value(exportedvac, energyvasf)
-        # importedva = self.calculate_value(importedva, energyvasf)
-        # importedvaa = self.calculate_value(importedvaa, energyvasf)
-        # importedvab = self.calculate_value(importedvab, energyvasf)
-        # importedvac = self.calculate_value(importedvac, energyvasf)
-
-        # self.data[meter_prefix + "exportedva"] = round(exportedva, abs(energyvasf))
-        # self.data[meter_prefix + "exportedvaa"] = round(exportedvaa, abs(energyvasf))
-        # self.data[meter_prefix + "exportedvab"] = round(exportedvab, abs(energyvasf))
-        # self.data[meter_prefix + "exportedvac"] = round(exportedvac, abs(energyvasf))
-        # self.data[meter_prefix + "importedva"] = round(importedva, abs(energyvasf))
-        # self.data[meter_prefix + "importedvaa"] = round(importedvaa, abs(energyvasf))
-        # self.data[meter_prefix + "importedvab"] = round(importedvab, abs(energyvasf))
-        # self.data[meter_prefix + "importedvac"] = round(importedvac, abs(energyvasf))
-
-        # importvarhq1 = decoder.decode_32bit_uint()
-        # importvarhq1a = decoder.decode_32bit_uint()
-        # importvarhq1b = decoder.decode_32bit_uint()
-        # importvarhq1c = decoder.decode_32bit_uint()
-        # importvarhq2 = decoder.decode_32bit_uint()
-        # importvarhq2a = decoder.decode_32bit_uint()
-        # importvarhq2b = decoder.decode_32bit_uint()
-        # importvarhq2c = decoder.decode_32bit_uint()
-        # importvarhq3 = decoder.decode_32bit_uint()
-        # importvarhq3a = decoder.decode_32bit_uint()
-        # importvarhq3b = decoder.decode_32bit_uint()
-        # importvarhq3c = decoder.decode_32bit_uint()
-        # importvarhq4 = decoder.decode_32bit_uint()
-        # importvarhq4a = decoder.decode_32bit_uint()
-        # importvarhq4b = decoder.decode_32bit_uint()
-        # importvarhq4c = decoder.decode_32bit_uint()
-        # energyvarsf = decoder.decode_16bit_int()
-
-        # importvarhq1 = self.calculate_value(importvarhq1, energyvarsf)
-        # importvarhq1a = self.calculate_value(importvarhq1a, energyvarsf)
-        # importvarhq1b = self.calculate_value(importvarhq1b, energyvarsf)
-        # importvarhq1c = self.calculate_value(importvarhq1c, energyvarsf)
-        # importvarhq2 = self.calculate_value(importvarhq2, energyvarsf)
-        # importvarhq2a = self.calculate_value(importvarhq2a, energyvarsf)
-        # importvarhq2b = self.calculate_value(importvarhq2b, energyvarsf)
-        # importvarhq2c = self.calculate_value(importvarhq2c, energyvarsf)
-        # importvarhq3 = self.calculate_value(importvarhq3, energyvarsf)
-        # importvarhq3a = self.calculate_value(importvarhq3a, energyvarsf)
-        # importvarhq3b = self.calculate_value(importvarhq3b, energyvarsf)
-        # importvarhq3c = self.calculate_value(importvarhq3c, energyvarsf)
-        # importvarhq4 = self.calculate_value(importvarhq4, energyvarsf)
-        # importvarhq4a = self.calculate_value(importvarhq4a, energyvarsf)
-        # importvarhq4b = self.calculate_value(importvarhq4b, energyvarsf)
-        # importvarhq4c = self.calculate_value(importvarhq4c, energyvarsf)
-
-        # self.data[meter_prefix + "importvarhq1"] = round(importvarhq1, abs(energyvarsf))
-        # self.data[meter_prefix + "importvarhq1a"] = round(
-        #     importvarhq1a, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq1b"] = round(
-        #     importvarhq1b, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq1c"] = round(
-        #     importvarhq1c, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq2"] = round(importvarhq2, abs(energyvarsf))
-        # self.data[meter_prefix + "importvarhq2a"] = round(
-        #     importvarhq2a, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq2b"] = round(
-        #     importvarhq2b, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq2c"] = round(
-        #     importvarhq2c, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq3"] = round(importvarhq3, abs(energyvarsf))
-        # self.data[meter_prefix + "importvarhq3a"] = round(
-        #     importvarhq3a, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq3b"] = round(
-        #     importvarhq3b, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq3c"] = round(
-        #     importvarhq3c, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq4"] = round(importvarhq4, abs(energyvarsf))
-        # self.data[meter_prefix + "importvarhq4a"] = round(
-        #     importvarhq4a, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq4b"] = round(
-        #     importvarhq4b, abs(energyvarsf)
-        # )
-        # self.data[meter_prefix + "importvarhq4c"] = round(
-        #     importvarhq4c, abs(energyvarsf)
-        # )
 
         return True
 

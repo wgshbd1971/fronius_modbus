@@ -1,0 +1,45 @@
+{
+    "config": {
+        "title": "Fronius Modbus",
+        "step": {
+            "user": {
+                "title": "Set up Fronius System",
+                "description": "Please provide connection details to Fronius System.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "scan_interval": "Scan Interval in Seconds",
+                    "inverter_modbus_unit_id": "Inverter Modbus Unit/Slave ID",
+                    "meter_modbus_unit_id": "Meter Modbus Unit/Slave ID"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_port": "Invalid port number",
+            "invalid_host": "Invalid host address",
+            "unsupported_hardware": "Unsupported hardware found. See error log for details.",
+            "unknown": "An unknown error occurred",
+            "scan_interval_too_short": "Scan interval is too short. Minimum 5 seconds.",
+            "modbus_address_conflict": "Modbus IDs are not unqiue"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Set up Fronius System",
+                "description": "Set options for your Fronius System.",
+                "data": {
+                    "ip_address": "IP Address",
+                    "port": "Port",
+                    "scan_interval": "Scan Interval in Seconds",
+                    "inverter_modbus_unit_id": "Inverter Modbus Unit/Slave ID",
+                    "meter_modbus_unit_id": "Meter Modbus Unit/Slave ID"
+                }
+            }
+        },
+        "error": {
+            "scan_interval_too_short": "Scan interval is too short. Minimum 10 seconds."
+        }
+    }
+  }

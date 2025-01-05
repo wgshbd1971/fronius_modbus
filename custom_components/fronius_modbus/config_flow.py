@@ -60,7 +60,9 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         raise InvalidHost
     if data[CONF_PORT] > 65535:
         raise InvalidPort
-    
+    if data[CONF_SCAN_INTERVAL] < 5:
+        raise ScanIntervalTooShort
+        
     meter_addresses = [data[CONF_METER_UNIT_ID]]
 
     all_addresses = meter_addresses + [data[CONF_INVERTER_UNIT_ID]] 
@@ -137,12 +139,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except InvalidPort:
+                errors["base"] = "invalid_port"
             except InvalidHost:
-                # The error string is set here, and should be translated.
-                # This example does not currently cover translations, see the
-                # comments on `DATA_SCHEMA` for further details.
-                # Set the error on the `host` field, not the entire form.
                 errors["host"] = "invalid_host"
+            except ScanIntervalTooShort:
+                errors["base"] = "scan_interval_too_short"
             except UnsupportedHardware:
                 errors["base"] = "unsupported_hardware"
             except AddressesNotUnique:
@@ -170,3 +172,6 @@ class UnsupportedHardware(exceptions.HomeAssistantError):
 
 class AddressesNotUnique(exceptions.HomeAssistantError):
     """Error to indicate that the modbus addresses are not unique."""
+
+class ScanIntervalTooShort(exceptions.HomeAssistantError):
+    """Error to indicate the scan interval is too short."""    

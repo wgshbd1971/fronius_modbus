@@ -18,10 +18,12 @@ ATTR_MANUFACTURER = "Fronius"
 SUPPORTED_MANUFACTURERS = ['Fronius']
 SUPPORTED_MODELS = ['Primo GEN24', 'Symo GEN24']
 
-BASE_INFO_ADDRESS = 40004
+COMMON_ADDRESS = 40004
 INVERTER_ADDRESS = 40071
+NAMEPLATE_ADDRESS = 40123
 MPPT_ADDRESS = 40255
-STORAGE_INFO_ADDRESS = 40345
+METER_ADDRESS = 40071
+STORAGE_ADDRESS = 40345
 STORAGE_CONTROL_MODE_ADDRESS = 40348
 MINIMUM_RESERVE_ADDRESS = 40350
 DISCHARGE_RATE_ADDRESS = 40355
@@ -66,6 +68,11 @@ STORAGE_SENSOR_TYPES = {
     "discharging_power": ["Discharging Power", "discharging_power",  None, None, "%", "mdi:gauge", EntityCategory.DIAGNOSTIC],
     "minimum_reserve": ["Minimum Reserve", "minimum_reserve",  None, None, "%", "mdi:gauge", None],
     "grid_charging": ["Grid Charging", "grid_charging",  None, None, None, None, EntityCategory.DIAGNOSTIC],
+    "WHRtg": ["Capacity", "WHRtg",  SensorDeviceClass.ENERGY, SensorStateClass.MEASUREMENT, "Wh", None, EntityCategory.DIAGNOSTIC],
+    "MaxChaRte": ["Maximum Charge Rate", "MaxChaRte",  SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", None, EntityCategory.DIAGNOSTIC],
+    "MaxDisChaRte": ["Maximum Discharge Rate", "MaxDisChaRte",  SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, "W", None, EntityCategory.DIAGNOSTIC],
+    #"WChaGra": ["Setpoint for maximum charge", "WChaGra", None, None, None, None, EntityCategory.DIAGNOSTIC],
+    #"WDisChaGra": ["Setpoint for maximum discharge", "WDisChaGra", None, None, None, None, EntityCategory.DIAGNOSTIC],
 }
 
 STORAGE_CONTROL_MODE = {
