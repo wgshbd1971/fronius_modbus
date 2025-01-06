@@ -10,7 +10,17 @@ Home assistant Custom Component for reading data from Fronius Gen24 Inverter and
 > You are using this module (and it's prerequisites/dependencies) at your own risk. Not me neither any of contributors to this or any prerequired/dependency project are responsible for damage in any kind caused by this project or any of its prerequsites/dependencies.
 
 # Installation
-Copy contents of custom_components folder to your home-assistant config/custom_components folder or install through HACS.
+
+HACS installation
+* Go to HACS
+* Click on the 3 dots in the top right corner.
+* Select "Custom repositories"
+* Add the [URL](https://github.com/redpomodoro/fronius_modbus) to the repository.
+* Select the 'integration' type.
+* Click the "ADD" button.
+
+Manual installation
+Copy contents of custom_components folder to your home-assistant config/custom_components folder.
 After reboot of Home-Assistant, this integration can be configured through the integration setup UI.
 
 Make sure modbus is enabled on the inverter. You can check by going into the web interface of the inverter and go to:
