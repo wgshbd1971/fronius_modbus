@@ -40,11 +40,11 @@ And turn on:
 ### Controls
 | Entity  | Description |
 | --- | --- |
-| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 | Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
 | Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
 | Grid Discharge Power | The relative discharging power when the storage is being discharged to the grid. |
-| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
+| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. Called 'Reserve Capacity' in Fronius Web UI. |
+| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
 
 ### Storage Control Modes
 | Mode  | Description |
@@ -82,7 +82,7 @@ And turn on:
 | Entity  | Description |
 | --- | --- |
 | Charge Status | Holding / Charging / Discharging |
-| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below |
+| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below. Called 'Reserve Capacity' in Web UI. |
 | State of Charge | The current battery level |
 
 ### Diagnostic
