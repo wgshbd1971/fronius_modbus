@@ -33,6 +33,10 @@ And turn on:
 
 ![modbus settings](images/modbus_settings.png?raw=true "modbus")
 
+
+> [!IMPORTANT]
+> Turn off scheduled (dis)charging in the web UI to avoid unexpected behavior.
+
 # Usage
 
 ### Battery Storage
