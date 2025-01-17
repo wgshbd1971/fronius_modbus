@@ -32,6 +32,14 @@ from .const import (
     CHARGE_STATUS,
     CHARGE_GRID_STATUS,
     STORAGE_EXT_CONTROL_MODE,
+    INVERTER_STATUS,
+    FRONIUS_INVERTER_STATUS,
+    CONNECTION_STATUS,
+    CONNECTION_STATUS_CONDENSED,
+    ECP_CONNECTION_STATUS,
+    INVERTER_CONTROLS,
+    INVERTER_EVENTS,
+    CONTROL_STATUS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,14 +64,15 @@ class Hub:
         self._scan_interval = timedelta(seconds=scan_interval)
         self._unsub_interval_method = None
         self._entities = []
+        self._entities_dict = {}
         self.data = {}
         #self.data['reserve_target'] = 30
         self.meter_configured = False
         self.mppt_configured = False
         self.storage_configured = False
         self.storage_extended_control_mode = 0
-        self._bydclient = None
-
+        self.max_charge_rate_w = 11000
+        self.max_discharge_rate_w = 11000
 
     async def init_data(self):
         try: 
@@ -109,7 +118,7 @@ class Hub:
     def device_info_storage(self) -> dict:
         return {
             "identifiers": {(DOMAIN, f'{self._name}_battery_storage')},
-            "name": f'Battery Storage',
+            "name": f'Battery Storage {self.data.get('s_model')}',
             "manufacturer": self.data.get('s_manufacturer'),
             "model": self.data.get('s_model'),
             "serial_number": self.data.get('s_serial'),
@@ -119,7 +128,7 @@ class Hub:
     def device_info_inverter(self) -> dict:
         return {
             "identifiers": {(DOMAIN, f'{self._name}_inverter')},
-            "name": f'Inverter',
+            "name": f'Fronius Inverter {self.data.get('i_model')}',
             "manufacturer": self.data.get('i_manufacturer'),
             "model": self.data.get('i_model'),
             "serial_number": self.data.get('i_serial'),
@@ -130,7 +139,7 @@ class Hub:
     def get_device_info_meter(self, id) -> dict:
          return {
             "identifiers": {(DOMAIN, f'{self._name}_meter{id}')},
-            "name": f'Meter {id} {self.data.get(f'm{id}_options')}',
+            "name": f'Fronius Meter {id} {self.data.get(f'm{id}_options')}',
             "manufacturer": self.data.get(f'm{id}_manufacturer'),
             "model": self.data.get(f'm{id}_model'),
             "serial_number": self.data.get(f'm{id}_serial'),
@@ -152,7 +161,6 @@ class Hub:
             self._unsub_interval_method = async_track_time_interval(
                 self._hass, self.async_refresh_modbus_data, self._scan_interval
             )
-
         self._entities.append(update_callback)
 
     @callback
@@ -186,9 +194,6 @@ class Hub:
             raise ValueError(f"Value {value} failed validation ({comparison}{against})")
         return value
 
-#    async def get_json_storage_info(self):
-#        resp = await self._hass.async_add_executor_job(self.get_json_storage_info_main)
-
     def get_json_storage_info(self):
         url = f"http://{self._host}/solar_api/v1/GetStorageRealtimeData.cgi"
 
@@ -217,7 +222,31 @@ class Hub:
         if not self._check_and_reconnect():
             #if not connected, skip
             return False
-        
+
+        try:
+            update_result = self.read_inverter_data()
+        except Exception as e:
+            _LOGGER.exception("Error reading inverter data", exc_info=True)
+            update_result = False
+
+        try:
+            update_result = self.read_inverter_status_data()
+        except Exception as e:
+            _LOGGER.exception("Error reading inverter status data", exc_info=True)
+            update_result = False
+
+        try:
+            update_result = self.read_inverter_model_settings_data()
+        except Exception as e:
+            _LOGGER.exception("Error reading inverter model settings data", exc_info=True)
+            update_result = False
+
+        try:
+            update_result = self.read_inverter_controls_data()
+        except Exception as e:
+            _LOGGER.exception("Error reading inverter model settings data", exc_info=True)
+            update_result = False
+
         if self.meter_configured:
             for meter_address in self._meter_unit_ids:
                 try:
@@ -225,25 +254,21 @@ class Hub:
                 except Exception as e:
                     _LOGGER.error(f"Error reading meter data {meter_address}.", exc_info=True)
                     #update_result = False
-        
+
         if self.mppt_configured:
             try:
                 update_result = self.read_mppt_data()
             except Exception as e:
                 _LOGGER.exception("Error reading mptt data", exc_info=True)
                 update_result = False
-
+        
         if self.storage_configured:
             try:
                 update_result = self.read_inverter_storage_data()
             except Exception as e:
                 _LOGGER.exception("Error reading inverter storage data", exc_info=True)
                 update_result = False
-        try:
-            update_result = self.read_inverter_data()
-        except Exception as e:
-            _LOGGER.exception("Error reading inverter data", exc_info=True)
-            update_result = False
+
         return update_result
 
     async def test_connection(self) -> bool:
@@ -310,8 +335,23 @@ class Hub:
                 address=address, values=payload, slave=unit_id
             )
 
-    def calculate_value(self, value, sf):
-        return value * 10**sf
+    def bitmask_to_string(self, bitmask, bitmask_list, default='NA', max_length=255, bits=16):
+        strings = []
+        len_list = len(bitmask_list)
+        for bit in range(bits):
+            if bitmask & (1<<bit):
+                if bit < len_list: 
+                    value = bitmask_list[bit]
+                else:
+                    value = f'bit {bit} undefined'
+                strings.append(value)
+
+        if len(strings):
+            return ','.join(strings)[:max_length]
+        return default
+
+    def calculate_value(self, value, sf, digits=2):
+        return round(value * 10**sf, digits)
 
     def strip_escapes(self, value:str):
         if value is None:
@@ -344,29 +384,127 @@ class Hub:
         return True
 
     def read_inverter_data(self):
-        regs = self.get_registers(unit_id=self._inverter_unit_id, address=INVERTER_ADDRESS, count=38)
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=INVERTER_ADDRESS, count=50)
         if regs is None:
             return False
 
-        A = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
-        A_SF = self._client.convert_from_registers(regs[4:5], data_type = self._client.DATATYPE.INT16)
-        acpower = self.calculate_value(A, A_SF)
-        self.data["acpower"] = round(acpower, abs(A_SF))
+        PPVphAB = self._client.convert_from_registers(regs[5:6], data_type = self._client.DATATYPE.UINT16)
+        PPVphBC = self._client.convert_from_registers(regs[6:7], data_type = self._client.DATATYPE.UINT16)
+        PPVphCA = self._client.convert_from_registers(regs[7:8], data_type = self._client.DATATYPE.UINT16)
+        PhVphA = self._client.convert_from_registers(regs[8:9], data_type = self._client.DATATYPE.UINT16)
+        PhVphB = self._client.convert_from_registers(regs[9:10], data_type = self._client.DATATYPE.UINT16)
+        PhVphC = self._client.convert_from_registers(regs[10:11], data_type = self._client.DATATYPE.UINT16)
+        V_SF = self._client.convert_from_registers(regs[11:12], data_type = self._client.DATATYPE.INT16)
+
+        W = self._client.convert_from_registers(regs[12:13], data_type = self._client.DATATYPE.INT16)
+        W_SF = self._client.convert_from_registers(regs[13:14], data_type = self._client.DATATYPE.INT16)
+        Hz = self._client.convert_from_registers(regs[14:15], data_type = self._client.DATATYPE.INT16)
+        Hz_SF = self._client.convert_from_registers(regs[15:16], data_type = self._client.DATATYPE.INT16)
 
         WH = self._client.convert_from_registers(regs[22:24], data_type = self._client.DATATYPE.UINT32)
         WH_SF = self._client.convert_from_registers(regs[24:25], data_type = self._client.DATATYPE.INT16)
-        acenergy = self.calculate_value(WH, WH_SF)
-        self.data["acenergy"] = acenergy 
 
         TmpCab = self._client.convert_from_registers(regs[31:32], data_type = self._client.DATATYPE.INT16)
         Tmp_SF = self._client.convert_from_registers(regs[35:36], data_type = self._client.DATATYPE.INT16)
-        tempcab = self.calculate_value(TmpCab, Tmp_SF)
-        self.data['tempcab'] = tempcab
-
-        St = self._client.convert_from_registers(regs[36:37], data_type = self._client.DATATYPE.UINT16)
-        self.data["status"] = St
+        #St = self._client.convert_from_registers(regs[36:37], data_type = self._client.DATATYPE.UINT16)
         StVnd = self._client.convert_from_registers(regs[37:38], data_type = self._client.DATATYPE.UINT16)
-        self.data["statusvendor"] = StVnd
+        #EvtVnd1 = self._client.convert_from_registers(regs[42:44], data_type = self._client.DATATYPE.UINT32)
+        EvtVnd2 = self._client.convert_from_registers(regs[44:46], data_type = self._client.DATATYPE.UINT32)
+
+        self.data['PPVphAB'] = self.calculate_value(PPVphAB, V_SF)
+        self.data['PPVphBC'] = self.calculate_value(PPVphBC, V_SF)
+        self.data['PPVphCA'] = self.calculate_value(PPVphCA, V_SF)
+        self.data['PhVphA'] = self.calculate_value(PhVphA, V_SF)
+        self.data['PhVphB'] = self.calculate_value(PhVphB, V_SF)
+        self.data['PhVphC'] = self.calculate_value(PhVphC, V_SF)
+        self.data['tempcab'] = self.calculate_value(TmpCab, Tmp_SF)
+        self.data["acpower"] = self.calculate_value(W, W_SF)
+        self.data["line_frequency"] = self.calculate_value(Hz, Hz_SF)
+        self.data["acenergy"] = self.calculate_value(WH, WH_SF) 
+        #self.data["status"] = INVERTER_STATUS[St]
+        self.data["statusvendor"] = FRONIUS_INVERTER_STATUS[StVnd]
+        #self.data["events1"] = self.bitmask_to_string(EvtVnd1,INVERTER_EVENTS,default='None',bits=32)  
+        self.data["events2"] = self.bitmask_to_string(EvtVnd2,INVERTER_EVENTS,default='None',bits=32)  
+
+        return True
+
+    def read_inverter_nameplate_data(self):
+        """start reading storage data"""
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=NAMEPLATE_ADDRESS, count=120)
+        if regs is None:
+            return False
+
+        # DERTyp: Type of DER device. Default value is 4 to indicate PV device.
+        DERTyp = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        # WHRtg: Nominal energy rating of storage device.
+        WHRtg = self._client.convert_from_registers(regs[17:18], data_type = self._client.DATATYPE.UINT16)
+        # MaxChaRte: Maximum rate of energy transfer into the storage device.
+        MaxChaRte = self._client.convert_from_registers(regs[21:22], data_type = self._client.DATATYPE.UINT16)
+        # MaxDisChaRte: Maximum rate of energy transfer out of the storage device.
+        MaxDisChaRte = self._client.convert_from_registers(regs[23:24], data_type = self._client.DATATYPE.UINT16)
+
+        if DERTyp == 82:
+            self.storage_configured = True
+        self.data['WHRtg'] = WHRtg
+        self.data['MaxChaRte'] = MaxChaRte
+        self.data['MaxDisChaRte'] = MaxDisChaRte
+    
+        self.max_charge_rate_w = MaxChaRte
+        self.max_discharge_rate_w = MaxDisChaRte
+
+        return True
+
+    def read_inverter_status_data(self):
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=40183, count=44)
+        if regs is None:
+            return False
+
+        PVConn = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        StorConn = self._client.convert_from_registers(regs[1:2], data_type = self._client.DATATYPE.UINT16)
+        ECPConn = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
+
+        StActCtl = self._client.convert_from_registers(regs[33:35], data_type = self._client.DATATYPE.UINT32)
+        
+        self.data['pv_connection'] = CONNECTION_STATUS_CONDENSED[PVConn]
+        self.data['storage_connection'] = CONNECTION_STATUS_CONDENSED[StorConn] 
+        self.data['ecp_connection'] = ECP_CONNECTION_STATUS[ECPConn]
+        self.data['inverter_controls'] = self.bitmask_to_string(StActCtl, INVERTER_CONTROLS, 'Normal')  
+
+        return True
+
+    def read_inverter_model_settings_data(self):
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=40151, count=30)
+        if regs is None:
+            return False
+
+        WMax = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
+        #VRef = self._client.convert_from_registers(regs[1:2], data_type = self._client.DATATYPE.UINT16)
+        #VRefOfs = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
+
+        WMax_SF = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
+        #VRef_SF = self._client.convert_from_registers(regs[21:22], data_type = self._client.DATATYPE.INT16)
+        #VRefOfs_SF = self._client.convert_from_registers(regs[21:22], data_type = self._client.DATATYPE.INT16)
+
+        self.data['max_power'] = self.calculate_value(WMax, WMax_SF) 
+        #self.data['vref'] = self.calculate_value(VRef, VRef_SF) # At PCC 
+        #self.data['vrefofs'] = self.calculate_value(VRefOfs, VRefOfs_SF) # At PCC 
+
+        return True
+
+    def read_inverter_controls_data(self):
+        regs = self.get_registers(unit_id=self._inverter_unit_id, address=40229, count=24)
+        if regs is None:
+            return False
+
+        Conn = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
+        WMaxLim_Ena = self._client.convert_from_registers(regs[7:8], data_type = self._client.DATATYPE.UINT16)
+        OutPFSet_Ena = self._client.convert_from_registers(regs[12:13], data_type = self._client.DATATYPE.UINT16)
+        VArPct_Ena = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
+
+        self.data['Conn'] = CONTROL_STATUS[Conn]
+        self.data['WMaxLim_Ena'] = CONTROL_STATUS[WMaxLim_Ena]
+        self.data['OutPFSet_Ena'] = CONTROL_STATUS[OutPFSet_Ena]
+        self.data['VArPct_Ena'] = CONTROL_STATUS[VArPct_Ena]
 
         return True
 
@@ -418,29 +556,6 @@ class Hub:
 
         return True
 
-    def read_inverter_nameplate_data(self):
-        """start reading storage data"""
-        regs = self.get_registers(unit_id=self._inverter_unit_id, address=NAMEPLATE_ADDRESS, count=120)
-        if regs is None:
-            return False
-
-        # DERTyp: Type of DER device. Default value is 4 to indicate PV device.
-        DERTyp = self._client.convert_from_registers(regs[0:1], data_type = self._client.DATATYPE.UINT16)
-        # WHRtg: Nominal energy rating of storage device.
-        WHRtg = self._client.convert_from_registers(regs[17:18], data_type = self._client.DATATYPE.UINT16)
-        # MaxChaRte: Maximum rate of energy transfer into the storage device.
-        MaxChaRte = self._client.convert_from_registers(regs[21:22], data_type = self._client.DATATYPE.UINT16)
-        # MaxDisChaRte: Maximum rate of energy transfer out of the storage device.
-        MaxDisChaRte = self._client.convert_from_registers(regs[23:24], data_type = self._client.DATATYPE.UINT16)
-
-        if DERTyp == 82:
-            self.storage_configured = True
-        self.data['WHRtg'] = WHRtg
-        self.data['MaxChaRte'] = MaxChaRte
-        self.data['MaxDisChaRte'] = MaxDisChaRte
-    
-        return True
-
     def read_inverter_storage_data(self):
         """start reading storage data"""
         regs = self.get_registers(unit_id=self._inverter_unit_id, address=STORAGE_ADDRESS, count=24)
@@ -488,34 +603,30 @@ class Hub:
         self.data['grid_charging'] = CHARGE_GRID_STATUS.get(charge_grid_set)
         #self.data['power'] = power
         self.data['charge_status'] = CHARGE_STATUS.get(charge_status)
-        self.data['minimum_reserve'] = minimum_reserve / 100.0
-        self.data['discharging_power'] = discharge_power / 100.0
-        self.data['charging_power'] = charge_power / 100.0
+        self.data['minimum_reserve'] =  self.calculate_value(minimum_reserve, -2)
+        self.data['discharging_power'] = self.calculate_value(discharge_power, -2)
+        self.data['charging_power'] = self.calculate_value(charge_power, -2)
         self.data['soc'] = self.calculate_value(charge_state, -2)
-        self.data['max_charge'] = max_charge #self.calculate_value(max_charge, max_charge_sf)
-        self.data['WChaGra'] = WChaGra
-        self.data['WDisChaGra'] = WDisChaGra
+        self.data['max_charge'] = self.calculate_value(max_charge, 0, 0)
+        self.data['WChaGra'] = self.calculate_value(WChaGra, 0, 0)
+        self.data['WDisChaGra'] = self.calculate_value(WDisChaGra, 0, 0)
 
         control_mode = self.data.get('control_mode')
         if control_mode is None or control_mode != STORAGE_CONTROL_MODE.get(storage_control_mode):
             if discharge_power >= 0:
-                self.data['discharge_limit'] = discharge_power / 100.0
+                self.data['discharge_limit'] = discharge_power / 100.0 
                 self.data['grid_charge_power'] = 0
             else: 
-                self.data['grid_charge_power'] = (discharge_power * -1) / 100.0
+                self.data['grid_charge_power'] = (discharge_power * -1) / 100.0 
                 self.data['discharge_limit'] = 0
             if charge_power >= 0:
-                self.data['charge_limit'] = charge_power / 100
+                self.data['charge_limit'] = charge_power / 100 
                 self.data['grid_discharge_power'] = 0
             else: 
-                self.data['grid_discharge_power'] = (charge_power * -1) / 100.0
+                self.data['grid_discharge_power'] = (charge_power * -1) / 100.0 
                 self.data['charge_limit'] = 0
 
             self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
-
-        if self.meter_configured:
-            if not self.data.get('m1_power') is None and not self.data.get('acpower') is None:
-                self.data['load'] = self.data['m1_power'] + self.data['acpower']
 
         # set extended storage control mode at startup
         ext_control_mode = self.data.get('ext_control_mode')
@@ -558,22 +669,37 @@ class Hub:
         regs = self.get_registers(unit_id=unit_id, address=METER_ADDRESS, count=103)
         if regs is None:
             return False
-        
-        acpower = self._client.convert_from_registers(regs[16:17], data_type = self._client.DATATYPE.INT16)
-        acpowersf = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
 
-        acpower = self.calculate_value(acpower, acpowersf)
-        self.data[meter_prefix + "power"] = round(acpower, abs(acpowersf))
+        PhVphA = self._client.convert_from_registers(regs[6:7], data_type = self._client.DATATYPE.INT16)
+        PhVphB = self._client.convert_from_registers(regs[7:8], data_type = self._client.DATATYPE.INT16)
+        PhVphC = self._client.convert_from_registers(regs[8:9], data_type = self._client.DATATYPE.INT16)
+        PPV = self._client.convert_from_registers(regs[9:10], data_type = self._client.DATATYPE.INT16)
+        V_SF = self._client.convert_from_registers(regs[13:14], data_type = self._client.DATATYPE.INT16)
 
-        exported = self._client.convert_from_registers(regs[36:38], data_type = self._client.DATATYPE.UINT32)
-        imported = self._client.convert_from_registers(regs[44:46], data_type = self._client.DATATYPE.UINT32)
-        energywsf = self._client.convert_from_registers(regs[52:53], data_type = self._client.DATATYPE.INT16)
+        Hz = self._client.convert_from_registers(regs[14:15], data_type = self._client.DATATYPE.INT16)
+        Hz_SF = self._client.convert_from_registers(regs[15:16], data_type = self._client.DATATYPE.INT16)
+        W = self._client.convert_from_registers(regs[16:17], data_type = self._client.DATATYPE.INT16)
+        W_SF = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
 
-        exported = self.calculate_value(exported, energywsf) #self.validate(self.calculate_value(exported, energywsf), ">", 0)
-        imported = self.calculate_value(imported, energywsf) #self.validate(self.calculate_value(imported, energywsf), ">", 0)
+        TotWhExp = self._client.convert_from_registers(regs[36:38], data_type = self._client.DATATYPE.UINT32)
+        TotWhImp = self._client.convert_from_registers(regs[44:46], data_type = self._client.DATATYPE.UINT32)
+        TotWh_SF = self._client.convert_from_registers(regs[52:53], data_type = self._client.DATATYPE.INT16)
 
-        self.data[meter_prefix + "exported"] = exported #round(exported * 0.001, 3)
-        self.data[meter_prefix + "imported"] = imported #round(imported * 0.001, 3)
+        acpower = self.calculate_value(W, W_SF)
+
+        self.data[meter_prefix + "PhVphA"] = self.calculate_value(PhVphA, V_SF,1)
+        self.data[meter_prefix + "PhVphB"] = self.calculate_value(PhVphB, V_SF,1)
+        self.data[meter_prefix + "PhVphC"] = self.calculate_value(PhVphC, V_SF,1)
+        self.data[meter_prefix + "PPV"] = self.calculate_value(PPV, V_SF,1)
+        self.data[meter_prefix + "exported"] = self.calculate_value(TotWhExp, TotWh_SF)
+        self.data[meter_prefix + "imported"] = self.calculate_value(TotWhImp, TotWh_SF)
+        self.data[meter_prefix + "line_frequency"] = self.calculate_value(Hz, Hz_SF)
+        self.data[meter_prefix + "power"] = acpower
+
+        if meter_prefix == 'm1_':
+            inverter_acpower = self.data.get('acpower')
+            if not acpower is None and not inverter_acpower is None:
+                self.data['load'] = acpower + inverter_acpower
 
         return True
 
@@ -590,12 +716,30 @@ class Hub:
         minimum_reserve = round(minimum_reserve * 100)
         self.write_registers(unit_id=self._inverter_unit_id, address=MINIMUM_RESERVE_ADDRESS, payload=minimum_reserve)
 
+    def set_discharge_rate_w(self, discharge_rate_w):
+        if discharge_rate_w > self.max_discharge_rate_w:
+            discharge_rate = 100
+        elif discharge_rate_w < self.max_discharge_rate_w * -1:
+            discharge_rate = -100
+        else:
+            discharge_rate = discharge_rate_w / self.max_discharge_rate_w * 100
+        self.set_discharge_rate(discharge_rate)
+
     def set_discharge_rate(self, discharge_rate):
         if discharge_rate < 0:
-            discharge_rate =  int(65536 + (discharge_rate * 100))
+            discharge_rate = int(65536 + (discharge_rate * 100))
         else:
             discharge_rate = int(round(discharge_rate * 100))
         self.write_registers(unit_id=self._inverter_unit_id, address=DISCHARGE_RATE_ADDRESS, payload=discharge_rate)
+
+    def set_charge_rate_w(self, charge_rate_w):
+        if charge_rate_w > self.max_charge_rate_w:
+            charge_rate = 100
+        elif charge_rate_w < self.max_charge_rate_w * -1:
+            charge_rate = -100
+        else:
+            charge_rate = charge_rate_w / self.max_charge_rate_w * 100
+        self.set_charge_rate(charge_rate)
 
     def set_charge_rate(self, charge_rate):
         if charge_rate < 0:
@@ -621,98 +765,49 @@ class Hub:
         self.data['grid_discharge_power'] = grid_discharge_power
         if not minimum_reserve is None:
             self.set_minimum_reserve(minimum_reserve)
-
+        
     def restore_defaults(self):
         self.change_settings(mode=0, charge_limit=100, discharge_limit=100, minimum_reserve=7)
         _LOGGER.info(f"restored defaults")
 
     def set_auto_mode(self):
-        #self.set_minimum_reserve(30)
         self.change_settings(mode=0, charge_limit=100, discharge_limit=100)
         _LOGGER.info(f"Auto mode")
 
     def set_charge_mode(self):
-        charge_rate = self.data.get('charge_limit')
-        if charge_rate is None:
-            _LOGGER.error(f'Charge Rate not set')
-            return
-        if charge_rate <= 0:
-            charge_rate = 100
-        self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100)
-#        self.set_minimum_reserve(30)
-        _LOGGER.info(f"Set charge mode with limit: {charge_rate}")
+        self.change_settings(mode=1, charge_limit=100, discharge_limit=100)
+        _LOGGER.info(f"Set charge mode")
   
     def set_discharge_mode(self):
-        discharge_rate = self.data.get('discharge_limit')
-        if discharge_rate is None:
-            _LOGGER.error(f'Discharge Rate not set')
-            return
-        if discharge_rate <= 0:
-            discharge_rate = 100
-        self.change_settings(mode=1, charge_limit=100, discharge_limit=discharge_rate)
-#        self.set_minimum_reserve(30)
-        _LOGGER.info(f"Set discharge mode with limit: {discharge_rate}")
+        self.change_settings(mode=2, charge_limit=100, discharge_limit=100)
+        _LOGGER.info(f"Set discharge mode")
 
     def set_charge_discharge_mode(self):
-        charge_rate = self.data.get('charge_limit')
-        discharge_rate = self.data.get('discharge_limit')
-        if charge_rate is None:
-            _LOGGER.error(f'Charge Rate not set')
-            return
-        if discharge_rate is None:
-            _LOGGER.error(f'Discharge Rate not set')
-            return
-        self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=discharge_rate)
-#        self.set_minimum_reserve(30)
-        _LOGGER.info(f"Set charge/discharge mode. {charge_rate} {charge_rate}")
+        self.change_settings(mode=3, charge_limit=100, discharge_limit=100)
+        _LOGGER.info(f"Set charge/discharge mode.")
 
     def set_grid_charge_mode(self):
-        grid_charge_power = self.data.get('grid_charge_power')
-        if grid_charge_power is None:
-            _LOGGER.error(f'Grid Charge Power not set')
-            return
-        if grid_charge_power == 0:
-            grid_charge_power = 100
+        grid_charge_power = 0
         discharge_rate = grid_charge_power * -1
         self.change_settings(mode=2, charge_limit=100, discharge_limit=discharge_rate, grid_charge_power=grid_charge_power)
-#        self.set_minimum_reserve(99)
         _LOGGER.info(f"Forced charging at {grid_charge_power}")
 
     def set_grid_discharge_mode(self):
-        grid_discharge_power = self.data.get('grid_discharge_power')
-        if grid_discharge_power is None:
-            _LOGGER.error(f'Grid Discharge Power not set')
-            return
-        if grid_discharge_power == 0:
-            grid_discharge_power = 100
+        grid_discharge_power = 0
         charge_rate = grid_discharge_power * -1
         self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100, grid_discharge_power=grid_discharge_power)
-#        self.set_minimum_reserve(99)
         _LOGGER.info(f"Forced discharging to grid {grid_discharge_power}")
 
     def set_block_discharge_mode(self):
-        charge_rate = self.data.get('charge_limit')
-        if charge_rate is None:
-            _LOGGER.error(f'charge Rate not set')
-            return
-        if charge_rate <= 0:
-            charge_rate = 100
+        charge_rate = 100
         self.change_settings(mode=3, charge_limit=charge_rate, discharge_limit=0)
- #       self.set_minimum_reserve(30)
         _LOGGER.info(f"blocked discharging")
 
     def set_block_charge_mode(self):
-        discharge_rate = self.data.get('discharge_limit')
-        if discharge_rate is None:
-            _LOGGER.error(f'Discharge Rate not set')
-            return
-        if discharge_rate <= 0:
-            discharge_rate = 100
+        discharge_rate = 100
         self.change_settings(mode=3, charge_limit=0, discharge_limit=discharge_rate)
- #       self.set_minimum_reserve(30)
         _LOGGER.info(f"Block charging at {discharge_rate}")
 
     def set_calibrate_mode(self):
-        #self.set_minimum_reserve(30)
         self.change_settings(mode=2, charge_limit=100, discharge_limit=-100, grid_charge_power=100)
         _LOGGER.info(f"Auto mode")
