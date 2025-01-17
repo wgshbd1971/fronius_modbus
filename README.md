@@ -10,7 +10,17 @@ Home assistant Custom Component for reading data from Fronius Gen24 Inverter and
 > You are using this module (and it's prerequisites/dependencies) at your own risk. Not me neither any of contributors to this or any prerequired/dependency project are responsible for damage in any kind caused by this project or any of its prerequsites/dependencies.
 
 # Installation
-Copy contents of custom_components folder to your home-assistant config/custom_components folder or install through HACS.
+
+HACS installation
+* Go to HACS
+* Click on the 3 dots in the top right corner.
+* Select "Custom repositories"
+* Add the [URL](https://github.com/redpomodoro/fronius_modbus) to the repository.
+* Select the 'integration' type.
+* Click the "ADD" button.
+
+Manual installation
+Copy contents of custom_components folder to your home-assistant config/custom_components folder.
 After reboot of Home-Assistant, this integration can be configured through the integration setup UI.
 
 Make sure modbus is enabled on the inverter. You can check by going into the web interface of the inverter and go to:
@@ -23,6 +33,10 @@ And turn on:
 
 ![modbus settings](images/modbus_settings.png?raw=true "modbus")
 
+
+> [!IMPORTANT]
+> Turn off scheduled (dis)charging in the web UI to avoid unexpected behavior.
+
 # Usage
 
 ### Battery Storage
@@ -30,23 +44,25 @@ And turn on:
 ### Controls
 | Entity  | Description |
 | --- | --- |
-| PV Charge Limit  | This is maximum percentage relative to maxium PV charging power of which the battery can be charged by.  |
-| Discharge Limit | This is maximum percentage relative to maxium discharging power of which the battery can be discharged by.  |
-| Grid Charge Power | The relative charging power when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
-| Grid Discharge Power | The relative discharging power when the storage is being discharged to the grid. |
-| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. |
+| Discharge Limit | This is maxium discharging power in watts of which the battery can be discharged by.  |
+| Grid Charge Power | The charging power in watts when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
+| Grid Discharge Power | The discharging power in watts when the storage is being discharged to the grid. |
+| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. Called 'Reserve Capacity' in Fronius Web UI. |
+| PV Charge Limit  | This is maximum PV charging power in watts of which the battery can be charged by.  |
 
 ### Storage Control Modes
 | Mode  | Description |
 | --- | --- |
 | Auto  | The storage will allow charging and discharging up to the minimum reserve. |
-| PV Charge Limit | The storage can be charged with PV power at a limited rate.  |
-| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate.  in Fronius Web UI |
-| PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. |
-| Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'.  |
-| Discharge to Grid | The storage will discharge to the gird using the discharge rate from 'Gird Discharge Power'. |
-| Block discharging | The storage can only be charged with PV power. |
-| Block charging | The can only be discharged and won't be charged with PV power. |
+| PV Charge Limit | The storage can be charged with PV power at a limited rate. Limit will be set to maximum power after change.  |
+| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate.  in Fronius Web UI. Limit will be set to maximum power after change. |
+| PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. Limits will be set to maximum power after change. |
+| Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'. Power will be set 0 after change. |
+| Discharge to Grid | The storage will discharge to the gird using the discharge rate from 'Gird Discharge Power'. Power will be set 0 after change. |
+| Block discharging | The storage can only be charged with PV power. Charge limit will be set to maximum power. |
+| Block charging | The can only be discharged and won't be charged with PV power. Discharge limit will be set to maximum power. |
+
+Note to change the mode first then set controls active in that mode.
 
 ### Controls used by Modes
 | Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Grid Discharge Power | Minimum Reserve | 
@@ -72,7 +88,7 @@ And turn on:
 | Entity  | Description |
 | --- | --- |
 | Charge Status | Holding / Charging / Discharging |
-| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below |
+| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below. Called 'Reserve Capacity' in Web UI. |
 | State of Charge | The current battery level |
 
 ### Diagnostic
