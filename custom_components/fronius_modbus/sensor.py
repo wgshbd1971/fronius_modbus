@@ -97,7 +97,12 @@ class FroniusModbusSensor(FroniusModbusBaseEntity, SensorEntity):
     def state(self):
         """Return the state of the sensor."""
         if self._key in self._hub.data:
-            return self._hub.data[self._key]
+            value = self._hub.data[self._key]
+            if isinstance(value, str):
+                if len(value)>255:
+                    value = value[:255]
+                    _LOGGER.error(f'state length > 255. k: {self._key} v: {value}')
+            return value
 
             # self._icon = icon_for_battery_level(
             #     battery_level=self.native_value, charging=False

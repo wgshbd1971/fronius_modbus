@@ -40,6 +40,7 @@ from .const import (
     INVERTER_CONTROLS,
     INVERTER_EVENTS,
     CONTROL_STATUS,
+    GRID_STATUS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -195,6 +196,10 @@ class Hub:
         return value
 
     def get_json_storage_info(self):
+        self.data['s_manufacturer'] = None
+        self.data['s_model'] = None
+        self.data['s_serial'] = None
+
         url = f"http://{self._host}/solar_api/v1/GetStorageRealtimeData.cgi"
 
         try:
@@ -206,10 +211,23 @@ class Hub:
                 _LOGGER.error(f"Error storage json data {response.status_code}")
                 return
 
-            details = data['Body']['Data']['1']['Controller']['Details']
-            self.data['s_manufacturer'] = details['Manufacturer']
-            self.data['s_model'] = details['Model']
-            self.data['s_serial'] = str(details['Serial']).strip()
+            try:
+                bodydata = data['Body']['Data']
+            except Exception as e:
+                _LOGGER.error(f"Error no body data in json data: {data}")
+                return
+            
+            for c in bodydata.keys():
+                try:
+                    details = bodydata[c]['Controller']['Details']
+                except Exception as e:
+                    _LOGGER.error(f"Error no details in json bodydata: {bodydata}")
+                    return
+
+                self.data['s_manufacturer'] = details['Manufacturer']
+                self.data['s_model'] = details['Model']
+                self.data['s_serial'] = str(details['Serial']).strip()
+                break
  
         except Exception as e:
             _LOGGER.error(f"Error storage json data {url} {e}", exc_info=True)
@@ -351,7 +369,11 @@ class Hub:
         return default
 
     def calculate_value(self, value, sf, digits=2):
-        return round(value * 10**sf, digits)
+        if self.is_numeric(value) and self.is_numeric(sf):
+            return round(value * 10**sf, digits)
+        else:
+            _LOGGER.debug(f'cannot calculate non numeric value: {value} sf: {sf} digits {digits}', exc_info=True)
+        return None
 
     def strip_escapes(self, value:str):
         if value is None:
@@ -423,6 +445,7 @@ class Hub:
         self.data["acenergy"] = self.calculate_value(WH, WH_SF) 
         #self.data["status"] = INVERTER_STATUS[St]
         self.data["statusvendor"] = FRONIUS_INVERTER_STATUS[StVnd]
+        self.data["statusvendor_id"] = StVnd
         #self.data["events1"] = self.bitmask_to_string(EvtVnd1,INVERTER_EVENTS,default='None',bits=32)  
         self.data["events2"] = self.bitmask_to_string(EvtVnd2,INVERTER_EVENTS,default='None',bits=32)  
 
@@ -686,22 +709,59 @@ class Hub:
         TotWh_SF = self._client.convert_from_registers(regs[52:53], data_type = self._client.DATATYPE.INT16)
 
         acpower = self.calculate_value(W, W_SF)
-
+        m_frequency = self.calculate_value(Hz, Hz_SF)
+ 
         self.data[meter_prefix + "PhVphA"] = self.calculate_value(PhVphA, V_SF,1)
         self.data[meter_prefix + "PhVphB"] = self.calculate_value(PhVphB, V_SF,1)
         self.data[meter_prefix + "PhVphC"] = self.calculate_value(PhVphC, V_SF,1)
         self.data[meter_prefix + "PPV"] = self.calculate_value(PPV, V_SF,1)
         self.data[meter_prefix + "exported"] = self.calculate_value(TotWhExp, TotWh_SF)
         self.data[meter_prefix + "imported"] = self.calculate_value(TotWhImp, TotWh_SF)
-        self.data[meter_prefix + "line_frequency"] = self.calculate_value(Hz, Hz_SF)
+        self.data[meter_prefix + "line_frequency"] = m_frequency
         self.data[meter_prefix + "power"] = acpower
 
         if meter_prefix == 'm1_':
             inverter_acpower = self.data.get('acpower')
             if not acpower is None and not inverter_acpower is None:
-                self.data['load'] = acpower + inverter_acpower
+                if self.is_numeric(acpower) and self.is_numeric(inverter_acpower):
+                    self.data['load'] = round(acpower + inverter_acpower,2)
+                elif not self.is_numeric(acpower):
+                    _LOGGER.warning(f'meter acpower not numeric {acpower}')
+                elif not self.is_numeric(inverter_acpower):
+                    _LOGGER.warning(f'inverter acpower not numeric {inverter_acpower}')
+
+            #status = None
+            status_str = ""
+            i_frequency = self.data["line_frequency"]
+            #_LOGGER.debug(f'grid status m: {m_frequency} i: {i_frequency}')
+            if not i_frequency is None and self.is_numeric(i_frequency):
+                if i_frequency > 48 and i_frequency < 52:
+                    status_str = GRID_STATUS.get(3)
+                elif i_frequency > 52 and i_frequency < 54:
+                    status_str = GRID_STATUS.get(1)
+                elif i_frequency < 1:
+                    # statusvendor = self.data.get("statusvendor")
+                    # statusvendor_id = self.data.get("statusvendor_id")
+                    # if statusvendor is None:
+                    #     statusvendor = 'na'
+                    #     statusvendor_id = -1
+                    if not m_frequency is None and self.is_numeric(m_frequency):                        
+                        if m_frequency > 48:
+                            status_str = GRID_STATUS.get(2)
+                        elif m_frequency < 1:
+                            status_str = GRID_STATUS.get(0)
+            if status_str is None:
+                _LOGGER.error(f'Could not establish grid connection status m: {m_frequency} i: {i_frequency}')
+                self.data["grid_status"] = None
+            else:
+                self.data["grid_status"] = status_str
 
         return True
+
+    def is_numeric(self, value):
+        if isinstance(value, (int, float, complex)) and not isinstance(value, bool):
+            return True
+        return False
 
     def set_storage_control_mode(self, mode: int):
         if not mode in [0,1,2,3]:

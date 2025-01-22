@@ -95,6 +95,13 @@ CHARGE_GRID_STATUS = {
     2: 'Enabled',
 }
 
+GRID_STATUS = {
+    0: 'Off grid',
+    1: 'Off grid operating',
+    2: 'On grid',
+    3: 'On grid operating',
+}
+
 CONNECTION_STATUS = [ 
     'Connected',
     'Available',
@@ -170,6 +177,8 @@ INVERTER_SENSOR_TYPES = {
     'max_power': ['Maximum power', 'max_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:lightning-bolt', None],
     #'events1': ['Events Customer', 'events1', None, None, None, None, EntityCategory.DIAGNOSTIC],    
     'events2': ['Events', 'events2', None, None, None, None, EntityCategory.DIAGNOSTIC],    
+
+    'grid_status': ['Grid status', 'grid_status', None, None, None, None, EntityCategory.DIAGNOSTIC],
 
     'Conn': ['Connection control', 'Conn', None, None, None, None, EntityCategory.DIAGNOSTIC],
     'WMaxLim_Ena': ['Throttle control', 'WMaxLim_Ena', None, None, None, None, EntityCategory.DIAGNOSTIC],

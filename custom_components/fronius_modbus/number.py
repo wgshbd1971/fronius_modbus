@@ -56,7 +56,6 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
     @property
     def state(self):
         """Return the state of the sensor."""
-        _LOGGER.debug(f'state {self._key} {self._hub.storage_extended_control_mode}')
 
         if self._key in self._hub.data:
             if self._key in ['grid_discharge_power','discharge_limit']:
