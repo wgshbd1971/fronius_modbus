@@ -84,7 +84,7 @@ Note to change the mode first then set controls active in that mode.
 | Max. discharging power | Discharge Limit | Discharge Limit |
 | Min. discharging power | Grid Discharge Power | Grid Discharge Power | 
 
-### Sensors
+### Battery Storage Sensors
 | Entity  | Description |
 | --- | --- |
 | Charge Status | Holding / Charging / Discharging |
@@ -95,6 +95,19 @@ Note to change the mode first then set controls active in that mode.
 | Entity  | Description |
 | --- | --- |
 To come!
+
+
+### Inverter Sensors
+| Entity  | Description |
+| --- | --- |
+| Load | The current total power consumption which is derived by adding up the meter AC power and interver AC power. |
+
+
+### Inverter Diagnostics
+| Entity  | Description |
+| --- | --- |
+| Grid status | Grid status based on meter and interter frequency. If inverter frequency is 53hz it is running in off grid mode and normally in 50hz. When the inverter is sleeping the meter frequency is checked for connection. |
+
 
 # Example Devices (Outdated screenshots!)
 
