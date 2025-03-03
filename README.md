@@ -38,7 +38,10 @@ And turn on:
 > Turn off scheduled (dis)charging in the web UI to avoid unexpected behavior.
 
 > [!IMPORTANT]
-> When using multiple integrations that use pymodbus package it can lead to version conflicts as they will share 1 package in HA. This can be fixed by removing ALL integrations using pymodbus and modbus configuratio.yaml (for the build in integration into HA), rebooting HA and then reinstalling the integrations and the modbus configuration yaml. 
+> When using multiple integrations that use pymodbus package it can lead to version conflicts as they will share 1 package in HA. This can be fixed by removing ALL integrations using pymodbus and modbus configuratio.yaml (for the build in integration into HA), rebooting HA and then reinstalling the integrations and the modbus configuration yaml.
+
+> [!IMPORTANT]
+> Update your GEN24 inverter firmware to 1.34.6-1 or higher otherwise battery charging might be limited.
 
 # Usage
 
