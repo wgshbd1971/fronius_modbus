@@ -18,6 +18,8 @@ from homeassistant.util import slugify
 from . import HubConfigEntry
 from .const import (
     INVERTER_SENSOR_TYPES,
+    INVERTER_SYMO_SENSOR_TYPES,
+    INVERTER_STORAGE_SENSOR_TYPES,
     METER_SENSOR_TYPES,
     STORAGE_SENSOR_TYPES,
     ENTITY_PREFIX,
@@ -34,7 +36,6 @@ async def async_setup_entry(
 ) -> None:
     """Add sensors for passed config_entry in HA."""
     hub:Hub = config_entry.runtime_data
-    hub_name = config_entry.data[CONF_NAME]
 
     entities = []
 
@@ -53,15 +54,30 @@ async def async_setup_entry(
         )
         entities.append(sensor)
 
-    if hub.meter_configured:
+    for sensor_info in INVERTER_SYMO_SENSOR_TYPES.values():
+        sensor = FroniusModbusSensor(
+            platform_name = ENTITY_PREFIX,
+            hub = hub,
+            device_info = hub.device_info_inverter,
+            name = sensor_info[0],
+            key = sensor_info[1],
+            device_class = sensor_info[2],
+            state_class = sensor_info[3],
+            unit = sensor_info[4],
+            icon = sensor_info[5],
+            entity_category = sensor_info[6],
+        )
+        entities.append(sensor)
 
+    if hub.meter_configured:
+        meter_id = '1'
         for sensor_info in METER_SENSOR_TYPES.values():
             sensor = FroniusModbusSensor(
                 platform_name = ENTITY_PREFIX,
                 hub = hub,
-                device_info = hub.get_device_info_meter('1'),
-                name = 'Meter 1 ' + sensor_info[0],
-                key = 'm1_' + sensor_info[1],
+                device_info = hub.get_device_info_meter(meter_id),
+                name = f'Meter {meter_id} ' + sensor_info[0],
+                key = f'm{meter_id}_' + sensor_info[1],
                 device_class = sensor_info[2],
                 state_class = sensor_info[3],
                 unit = sensor_info[4],
@@ -71,6 +87,20 @@ async def async_setup_entry(
             entities.append(sensor)        
 
     if hub.storage_configured:
+        for sensor_info in INVERTER_STORAGE_SENSOR_TYPES.values():
+            sensor = FroniusModbusSensor(
+                platform_name = ENTITY_PREFIX,
+                hub = hub,
+                device_info = hub.device_info_inverter,
+                name = sensor_info[0],
+                key = sensor_info[1],
+                device_class = sensor_info[2],
+                state_class = sensor_info[3],
+                unit = sensor_info[4],
+                icon = sensor_info[5],
+                entity_category = sensor_info[6],
+            )
+            entities.append(sensor)
 
         for sensor_info in STORAGE_SENSOR_TYPES.values():
             sensor = FroniusModbusSensor(

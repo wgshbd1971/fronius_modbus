@@ -80,33 +80,15 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
         """Change the selected value."""
 
         if self._key == 'minimum_reserve':
-            self._hub.set_minimum_reserve(value)
+            await self._hub.set_minimum_reserve(value)
         elif self._key == 'charge_limit':
-            if self._hub.storage_extended_control_mode in [1,3,6]:
-                # only change when discharge limit is used
-                self._hub.set_charge_rate_w(value)
-            elif self._hub.storage_extended_control_mode in [4,5,7]:
-                return
-            elif self._hub.storage_extended_control_mode in [0,2]:
-                return
+            self._hub.set_charge_limit(value)
         elif self._key == 'discharge_limit':
-            if self._hub.storage_extended_control_mode in [2,3,7]:
-                # only change when discharge limit is used
-                self._hub.set_discharge_rate_w(value)
-            elif self._hub.storage_extended_control_mode in [4,5,6]:
-                return
-            elif self._hub.storage_extended_control_mode in [0,1]:
-                return
+            self._hub.set_discharge_limit(value)
         elif self._key == 'grid_charge_power':
-            if self._hub.storage_extended_control_mode == 4:
-                self._hub.set_discharge_rate_w(value * -1)
-            else:
-                return
+            self._hub.set_grid_charge_power(value)
         elif self._key == 'grid_discharge_power':
-            if self._hub.storage_extended_control_mode == 5:
-                self._hub.set_charge_rate_w(value * -1)
-            else:
-                return
+            self._hub.set_grid_discharge_power(value)
 
         #_LOGGER.debug(f"Number {self._key} set to {value}")
         self.async_write_ha_state()

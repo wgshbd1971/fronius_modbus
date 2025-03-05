@@ -55,25 +55,9 @@ class FroniusModbusSelect(FroniusModbusBaseEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         new_mode = get_key(self._options_dict, option)
-        if new_mode == 0:
-            self._hub.set_auto_mode()
-        elif new_mode == 1:
-            self._hub.set_charge_mode()
-        elif new_mode == 2:
-            self._hub.set_discharge_mode()
-        elif new_mode == 3:
-            self._hub.set_charge_discharge_mode()
-        elif new_mode == 4:
-            self._hub.set_grid_charge_mode()
-        elif new_mode == 5:
-            self._hub.set_grid_discharge_mode()
-        elif new_mode == 6:
-            self._hub.set_block_discharge_mode()
-        elif new_mode == 7:
-            self._hub.set_block_charge_mode()
-        elif new_mode == 8:
-            self._hub.set_calibrate_mode()
+
+        await self._hub.set_mode(new_mode)
 
         self._hub.data[self._key] = option
-        self._hub.storage_extended_control_mode = new_mode
+        #self._hub.storage_extended_control_mode = new_mode
         self.async_write_ha_state()

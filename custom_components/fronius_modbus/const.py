@@ -18,113 +18,6 @@ ATTR_MANUFACTURER = 'Fronius'
 SUPPORTED_MANUFACTURERS = ['Fronius']
 SUPPORTED_MODELS = ['Primo GEN24', 'Symo GEN24']
 
-COMMON_ADDRESS = 40004
-INVERTER_ADDRESS = 40071
-NAMEPLATE_ADDRESS = 40123
-MPPT_ADDRESS = 40255
-METER_ADDRESS = 40071
-STORAGE_ADDRESS = 40345
-STORAGE_CONTROL_MODE_ADDRESS = 40348
-MINIMUM_RESERVE_ADDRESS = 40350
-DISCHARGE_RATE_ADDRESS = 40355
-CHARGE_RATE_ADDRESS = 40356
-
-    # Manufacturer
-    # Type
-    # Firmware
-    # Serial
-
-STORAGE_CONTROL_MODE = {
-    0: 'Auto',
-    1: 'Charge',
-    2: 'Discharge',
-    3: 'Change and Discharge',
-}
-
-CHARGE_STATUS = {
-    1: 'Off',
-    2: 'Empty',
-    3: 'Discharging',
-    4: 'Charging',
-    5: 'Full',
-    6: 'Holding',
-    7: 'Testing',
-}
-
-INVERTER_STATUS = {
-    1: 'Off',
-    2: 'Sleeping',
-    3: 'Starting',
-    4: 'Normal',
-    5: 'Throttled',
-    6: 'Shutdown',
-    7: 'Fault',
-    8: 'Standby',
-}
-
-INVERTER_CONTROLS = [
-    'Power reduction',
-    'Constant reactive power',
-    'Constant power factor',
-]
-
-INVERTER_EVENTS = [
-    'Error',
-    'Warning',
-    'Info',
-]
-
-FRONIUS_INVERTER_STATUS = {
-    1: 'Off',
-    2: 'Sleeping',
-    3: 'Starting',
-    4: 'Normal',
-    5: 'Throttled',
-    6: 'Shutdown',
-    7: 'Fault',
-    8: 'Standby',
-    9: 'No solarnet',
-    10: 'No inverter communication',
-    11: 'Overcurrent solarnet',
-    12: 'Firmware updating',
-    13: 'ACFI event',
-}
-
-CHARGE_GRID_STATUS = {
-    1: 'Disabled',
-    2: 'Enabled',
-}
-
-GRID_STATUS = {
-    0: 'Off grid',
-    1: 'Off grid operating',
-    2: 'On grid',
-    3: 'On grid operating',
-}
-
-CONNECTION_STATUS = [ 
-    'Connected',
-    'Available',
-    'Operating',
-]
-
-CONNECTION_STATUS_CONDENSED = {
-    0: 'Disconnected',
-    1: 'Connected', 
-    3: 'Available', 
-    7: 'Operating', 
-}
-
-ECP_CONNECTION_STATUS = {
-    0: 'Disconnected',
-    1: 'Connected',
-}
-
-CONTROL_STATUS = {
-    0: 'Disabled',
-    1: 'Enabled',
-}
-
 STORAGE_EXT_CONTROL_MODE = {
     0: 'Auto',
     1: 'PV Charge Limit',
@@ -156,17 +49,11 @@ INVERTER_SENSOR_TYPES = {
     'tempcab': ['Temperature', 'tempcab', SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT, '°C', 'mdi:thermometer', None],
     'mppt1_power': ['MPPT1 power', 'mppt1_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:solar-power', None],
     'mppt2_power': ['MPPT2 power', 'mppt2_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:solar-power', None],
-    'mppt3_power': ['Storage charging power', 'mppt3_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
-    'mppt4_power': ['Storage discharging power', 'mppt4_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
     'pv_power': ['PV power', 'pv_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:solar-power', None],
-    'storage_power': ['Storage power', 'storage_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
     'mppt1_lfte': ['MPPT1 lifetime energy', 'mppt1_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:solar-panel', None],
     'mppt2_lfte': ['MPPT2 lifetime energy', 'mppt2_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:solar-panel', None],
-    'mppt3_lfte': ['Storage charging lifetime energy', 'mppt3_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:home-battery', None],
-    'mppt4_lfte': ['Storage discharging lifetime energy', 'mppt4_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:home-battery', None],
     'load': ['Load', 'load', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:lightning-bolt', None],
     'pv_connection': ['PV connection', 'pv_connection', None, None, None, None, EntityCategory.DIAGNOSTIC],
-    'storage_connection': ['Storage connection', 'storage_connection', None, None, None, None, EntityCategory.DIAGNOSTIC],
     'ecp_connection': ['Electrical connection', 'ecp_connection', None, None, None, None, EntityCategory.DIAGNOSTIC],
     #'status': ['Status Base', 'status', None, None, None, None, None],
     'statusvendor': ['Status', 'statusvendor', None, None, None, None, EntityCategory.DIAGNOSTIC],
@@ -184,14 +71,27 @@ INVERTER_SENSOR_TYPES = {
     'WMaxLim_Ena': ['Throttle control', 'WMaxLim_Ena', None, None, None, None, EntityCategory.DIAGNOSTIC],
     'OutPFSet_Ena': ['Fixed power factor', 'OutPFSet_Ena', None, None, None, None, EntityCategory.DIAGNOSTIC],
     'VArPct_Ena': ['Limit VAr control', 'VArPct_Ena', None, None, None, None, EntityCategory.DIAGNOSTIC],
+    'PhVphA': ['AC voltage L1-N', 'PhVphA', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
+    'unit_id': ['Modbus ID', 'i_unit_id', None, None, None, None, EntityCategory.DIAGNOSTIC],    
+}
+
+INVERTER_SYMO_SENSOR_TYPES = {
+    'PhVphB': ['AC voltage L2-N', 'PhVphB', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
+    'PhVphC': ['AC voltage L3-N', 'PhVphC', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
     'PPVphAB': ['AC voltage L1-L2', 'PPVphAB', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
     'PPVphBC': ['AC voltage L2-L3', 'PPVphBC', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
     'PPVphCA': ['AC voltage L3-L1', 'PPVphCA', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
-    'PhVphA': ['AC voltage L1-N', 'PhVphA', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
-    'PhVphB': ['AC voltage L2-N', 'PhVphB', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
-    'PhVphC': ['AC voltage L3-N', 'PhVphC', SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT, 'V', 'mdi:lightning-bolt', None],
-    'unit_id': ['Modbus ID', 'i_unit_id', None, None, None, None, EntityCategory.DIAGNOSTIC],    
 }
+
+INVERTER_STORAGE_SENSOR_TYPES = {
+    'mppt3_power': ['Storage charging power', 'mppt3_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
+    'mppt4_power': ['Storage discharging power', 'mppt4_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
+    'storage_connection': ['Storage connection', 'storage_connection', None, None, None, None, EntityCategory.DIAGNOSTIC],
+    'storage_power': ['Storage power', 'storage_power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:home-battery', None],
+    'mppt3_lfte': ['Storage charging lifetime energy', 'mppt3_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:home-battery', None],
+    'mppt4_lfte': ['Storage discharging lifetime energy', 'mppt4_lfte', SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, 'Wh', 'mdi:home-battery', None],
+}
+
 
 METER_SENSOR_TYPES = {
     'power': ['Power', 'power', SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT, 'W', 'mdi:lightning-bolt', None],
