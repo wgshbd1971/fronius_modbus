@@ -54,9 +54,12 @@ class FroniusModbusClient(ExtModbusClient):
         self.storage_extended_control_mode = 0
         self.max_charge_rate_w = 11000
         self.max_discharge_rate_w = 11000
-        self._base_frequency = 50
-        self._base_frequency_lower_bound = self._base_frequency - 0.2
-        self._base_frequency_upper_bound = self._base_frequency + 0.2
+        self._grid_frequency = 50
+        self._grid_frequency_lower_bound = self._grid_frequency - 0.2
+        self._grid_frequency_upper_bound = self._grid_frequency + 0.2
+
+        self._inverter_frequency_lower_bound = self._grid_frequency - 5
+        self._inverter_frequency_upper_bound = self._grid_frequency + 5
 
         self.data = {}
 
@@ -497,25 +500,19 @@ class FroniusModbusClient(ExtModbusClient):
                 elif not self.is_numeric(inverter_acpower):
                     _LOGGER.error(f'inverter acpower not numeric {inverter_acpower}')
 
-            #status = None
             status_str = ""
             i_frequency = self.data["line_frequency"]
             #_LOGGER.debug(f'grid status m: {m_frequency} i: {i_frequency}')
             if not i_frequency is None and self.is_numeric(i_frequency) and not m_frequency is None and self.is_numeric(m_frequency):
                 m_online = False
-                if m_frequency and m_frequency > self._base_frequency_lower_bound and m_frequency < self._base_frequency_upper_bound:
+                if m_frequency and m_frequency > self._grid_frequency_lower_bound and m_frequency < self._grid_frequency_upper_bound:
                     m_online = True
                 
-                if m_online and i_frequency > self._base_frequency_lower_bound and i_frequency < self._base_frequency_upper_bound:
+                if m_online and i_frequency > self._grid_frequency_lower_bound and i_frequency < self._grid_frequency_upper_bound:
                     status_str = GRID_STATUS.get(3)
-                elif not m_online and i_frequency > (self._base_frequency - 5.5) and i_frequency < (self._base_frequency + 5.5):
+                elif not m_online and i_frequency > self._inverter_frequency_lower_bound and i_frequency < self._inverter_frequency_upper_bound:
                     status_str = GRID_STATUS.get(1)
                 elif i_frequency < 1:
-                    # statusvendor = self.data.get("statusvendor")
-                    # statusvendor_id = self.data.get("statusvendor_id")
-                    # if statusvendor is None:
-                    #     statusvendor = 'na'
-                    #     statusvendor_id = -1
                     if m_online:
                         status_str = GRID_STATUS.get(2)
                     elif m_frequency < 1:

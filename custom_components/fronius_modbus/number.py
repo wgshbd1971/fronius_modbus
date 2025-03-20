@@ -82,13 +82,13 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
         if self._key == 'minimum_reserve':
             await self._hub.set_minimum_reserve(value)
         elif self._key == 'charge_limit':
-            self._hub.set_charge_limit(value)
+            await self._hub.set_charge_limit(value)
         elif self._key == 'discharge_limit':
-            self._hub.set_discharge_limit(value)
+            await self._hub.set_discharge_limit(value)
         elif self._key == 'grid_charge_power':
-            self._hub.set_grid_charge_power(value)
+            await self._hub.set_grid_charge_power(value)
         elif self._key == 'grid_discharge_power':
-            self._hub.set_grid_discharge_power(value)
+            await self._hub.set_grid_discharge_power(value)
 
         #_LOGGER.debug(f"Number {self._key} set to {value}")
         self.async_write_ha_state()
