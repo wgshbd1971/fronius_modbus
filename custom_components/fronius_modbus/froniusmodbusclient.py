@@ -720,8 +720,8 @@ class FroniusModbusClient(ExtModbusClient):
     async def apply_export_limit(self, rate):
         """Apply export limit by first disabling, then setting rate, then enabling"""
         await self.set_export_limit_enable(0)  # Disable first
-        await asyncio.sleep(5.0)  # Increased delay
+        await asyncio.sleep(1.0)
         await self.set_export_limit_rate(rate)  # Set new rate
-        await asyncio.sleep(5.0)  # Increased delay
+        await asyncio.sleep(1.0)
         await self.set_export_limit_enable(1)  # Enable with new rate
         _LOGGER.info(f"Applied export limit: rate={rate}, enabled=1")
