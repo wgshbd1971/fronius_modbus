@@ -44,7 +44,7 @@ STORAGE_NUMBER_TYPES = [
 ]
 
 INVERTER_NUMBER_TYPES = [
-    ['Export limit rate', 'export_limit_rate', {'min': 100, 'max': 10000, 'step': 10, 'mode':'box', 'unit': None}],
+    ['Export limit rate', 'export_limit_rate', {'min': 0, 'max': 10000, 'step': 10, 'mode':'box', 'unit': None}],
 ]
 
 INVERTER_SELECT_TYPES = [
