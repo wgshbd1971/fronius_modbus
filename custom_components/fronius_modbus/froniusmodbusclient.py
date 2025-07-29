@@ -701,9 +701,9 @@ class FroniusModbusClient(ExtModbusClient):
         _LOGGER.info(f"Auto mode")
 
     async def set_export_limit_rate(self, rate):
-        """Set export limit rate (0-10000, where 10000=100%)"""
-        if rate < 0:
-            rate = 0
+        """Set export limit rate (100-10000, where 10000=100%, minimum 1%)"""
+        if rate < 100:
+            rate = 100
         elif rate > 10000:
             rate = 10000
         await self.write_registers(unit_id=self._inverter_unit_id, address=EXPORT_LIMIT_RATE_ADDRESS, payload=[int(rate)])
