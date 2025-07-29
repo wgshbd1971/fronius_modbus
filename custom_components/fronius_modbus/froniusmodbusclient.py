@@ -21,6 +21,7 @@ from .froniusmodbusclient_const import (
     CHARGE_RATE_ADDRESS,
     EXPORT_LIMIT_RATE_ADDRESS,
     EXPORT_LIMIT_ENABLE_ADDRESS,
+    CONN_ADDRESS,
     STORAGE_CONTROL_MODE,
     CHARGE_STATUS,
     CHARGE_GRID_STATUS,
@@ -725,3 +726,10 @@ class FroniusModbusClient(ExtModbusClient):
         await asyncio.sleep(1.0)
         await self.set_export_limit_enable(1)  # Enable with new rate
         _LOGGER.info(f"Applied export limit: rate={rate}, enabled=1")
+
+    async def set_conn_status(self, enable):
+        """Enable/disable inverter connection (0=Disconnected/Standby, 1=Connected/Normal)"""
+        conn_value = 1 if enable else 0
+        await self.write_registers(unit_id=self._inverter_unit_id, address=CONN_ADDRESS, payload=[conn_value])
+        self.data['Conn'] = CONTROL_STATUS[conn_value]
+        _LOGGER.info(f"Set inverter connection status to {conn_value} ({'Connected' if enable else 'Disconnected/Standby'})")

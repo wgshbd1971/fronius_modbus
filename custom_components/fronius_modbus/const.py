@@ -49,6 +49,7 @@ INVERTER_NUMBER_TYPES = [
 
 INVERTER_SELECT_TYPES = [
     ['Export limit enable', 'export_limit_enable', {0: 'Disabled', 1: 'Enabled'}],
+    ['Inverter connection', 'Conn', {0: 'Disconnected', 1: 'Connected'}],
 ]
 
 INVERTER_SENSOR_TYPES = {

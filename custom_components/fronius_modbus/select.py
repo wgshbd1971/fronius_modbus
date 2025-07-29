@@ -74,6 +74,8 @@ class FroniusModbusSelect(FroniusModbusBaseEntity, SelectEntity):
             #self._hub.storage_extended_control_mode = new_mode
         elif self._key == 'export_limit_enable':
             await self._hub.set_export_limit_enable(new_mode)
+        elif self._key == 'Conn':
+            await self._hub.set_conn_status(new_mode)
 
         self._hub.data[self._key] = option
         self.async_write_ha_state()
