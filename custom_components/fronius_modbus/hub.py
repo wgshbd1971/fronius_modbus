@@ -187,6 +187,13 @@ class Hub:
                 _LOGGER.exception("Error reading inverter storage data", exc_info=True)
                 update_result = False
 
+        # Read export limit data
+        try:
+            update_result = await self._client.read_export_limit_data()
+        except Exception as e:
+            _LOGGER.exception("Error reading export limit data", exc_info=True)
+            update_result = False
+
 
         if update_result:
             for update_callback in self._entities:
@@ -270,5 +277,17 @@ class Hub:
     @toggle_busy
     async def set_grid_discharge_power(self, value):
         await self._client.set_grid_discharge_power(value)
+
+    async def set_export_limit_rate(self, value):
+        await self._client.set_export_limit_rate(value)
+
+    async def set_export_limit_enable(self, value):
+        await self._client.set_export_limit_enable(value)
+
+    async def apply_export_limit(self, rate):
+        await self._client.apply_export_limit(rate)
+
+    async def set_conn_status(self, enable):
+        await self._client.set_conn_status(enable)
 
 
