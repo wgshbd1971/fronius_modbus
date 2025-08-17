@@ -1,6 +1,6 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
 
-# fronius_modbus
+# fronius_modbus THIS IS A COPY AS I COULDNT GET ORIGINAL WORKING! Do not use this as i suck at coding, but trying my best.
 Home assistant Custom Component for reading data from Fronius Gen24 Inverter and connected smart meters and battery storage. This integration uses a local modbus connection. 
 
 > [!CAUTION]
