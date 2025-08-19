@@ -1,5 +1,3 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
-
 # fronius_modbus THIS IS A COPY AS I COULDNT GET ORIGINAL WORKING! Do not use this as i suck at coding, but trying my best.
 Home assistant Custom Component for reading data from Fronius Gen24 Inverter and connected smart meters and battery storage. This integration uses a local modbus connection. 
 
@@ -11,17 +9,8 @@ Home assistant Custom Component for reading data from Fronius Gen24 Inverter and
 
 # Installation
 
-HACS installation
-* Go to HACS
-* Click on the 3 dots in the top right corner.
-* Select "Custom repositories"
-* Add the [URL](https://github.com/redpomodoro/fronius_modbus) to the repository.
-* Select the 'integration' type.
-* Click the "ADD" button.
-
-Manual installation
-Copy contents of custom_components folder to your home-assistant config/custom_components folder.
-After reboot of Home-Assistant, this integration can be configured through the integration setup UI.
+Copy the `fronius_modbus` directory from `custom_components` to your Home Assistant `config/custom_components` folder.
+After a restart of Home Assistant, configure the integration through the UI.
 
 Make sure modbus is enabled on the inverter. You can check by going into the web interface of the inverter and go to:
 "Communication" -> "Modbus"
