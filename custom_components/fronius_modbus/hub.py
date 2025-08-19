@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 from typing import Optional
-from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
+from packaging.version import Version
 
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_interval
@@ -67,13 +68,21 @@ class Hub:
         return
 
     def check_pymodbus_version(self):
-        if version('pymodbus') is None:
-            _LOGGER.warning(f"pymodbus not found")
-        elif version('pymodbus') < self.PYMODBUS_VERSION:
-            raise Exception(f"pymodbus {version('pymodbus')} found, please update to {self.PYMODBUS_VERSION} or higher")
-        elif version('pymodbus') > self.PYMODBUS_VERSION:
-            _LOGGER.warning(f"newer pymodbus {version('pymodbus')} found")
-        _LOGGER.debug(f"pymodbus {version('pymodbus')}")      
+        try:
+            installed = Version(version("pymodbus"))
+        except PackageNotFoundError:
+            _LOGGER.warning("pymodbus not found")
+            return
+
+        required = Version(self.PYMODBUS_VERSION)
+        if installed < required:
+            raise Exception(
+                f"pymodbus {installed} found, please update to {self.PYMODBUS_VERSION} or higher"
+            )
+        if installed > required:
+            _LOGGER.warning(f"newer pymodbus {installed} found")
+
+        _LOGGER.debug(f"pymodbus {installed}")
 
     @property 
     def device_info_storage(self) -> dict:
