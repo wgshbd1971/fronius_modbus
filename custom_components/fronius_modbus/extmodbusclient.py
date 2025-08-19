@@ -10,9 +10,27 @@ import struct
 import asyncio
 
 from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.utilities import unpack_bitstring
 from pymodbus.exceptions import ModbusIOException, ConnectionException
 from pymodbus import ExceptionResponse
+
+# pymodbus 3.6 removed ``unpack_bitstring`` from ``pymodbus.utilities``.
+# Earlier versions exposed this helper which converted a bytearray to a list
+# of booleans.  To maintain compatibility with newer pymodbus releases we try
+# to import it and fall back to a local implementation when it is missing.
+try:  # pragma: no cover - executed only when dependency provides the function
+    from pymodbus.utilities import unpack_bitstring  # type: ignore
+except Exception:  # pragma: no cover - for newer pymodbus versions
+    def unpack_bitstring(byte_list: bytes | bytearray) -> list[bool]:
+        """Return list of bits from ``byte_list``.
+
+        This mirrors the behaviour of the function removed from pymodbus
+        and is sufficient for the needs of this integration.
+        """
+        result: list[bool] = []
+        for byte in byte_list:
+            for bit in range(8):
+                result.append(bool(byte & (1 << bit)))
+        return result
 
 _LOGGER = logging.getLogger(__name__)
 
