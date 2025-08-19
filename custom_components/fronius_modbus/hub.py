@@ -29,7 +29,7 @@ class Hub:
         self._hass = hass
         self._name = name
 
-        self._id = f'{name.lower()}_{host.lower().replace('.','')}'
+        self._id = f"{name.lower()}_{host.lower().replace('.', '')}"
         self.online = True        
 
         self._client = FroniusModbusClient(host=host, port=port, inverter_unit_id=inverter_unit_id, meter_unit_ids=meter_unit_ids, timeout=max(3, (scan_interval - 1)))
@@ -87,8 +87,8 @@ class Hub:
     @property 
     def device_info_storage(self) -> dict:
         return {
-            "identifiers": {(DOMAIN, f'{self._name}_battery_storage')},
-            "name": f'{self._client.data.get('s_model')}',
+            "identifiers": {(DOMAIN, f"{self._name}_battery_storage")},
+            "name": f"{self._client.data.get('s_model')}",
             "manufacturer": self._client.data.get('s_manufacturer'),
             "model": self._client.data.get('s_model'),
             "serial_number": self._client.data.get('s_serial'),
@@ -97,24 +97,24 @@ class Hub:
     @property 
     def device_info_inverter(self) -> dict:
         return {
-            "identifiers": {(DOMAIN, f'{self._name}_inverter')},
-            "name": f'Fronius {self._client.data.get('i_model')}',
+            "identifiers": {(DOMAIN, f"{self._name}_inverter")},
+            "name": f"Fronius {self._client.data.get('i_model')}",
             "manufacturer": self._client.data.get('i_manufacturer'),
             "model": self._client.data.get('i_model'),
             "serial_number": self._client.data.get('i_serial'),
             "sw_version": self._client.data.get('i_sw_version'),
-            #"hw_version": f'modbus id-{self._client.data.get('i_unit_id')}',
+            #"hw_version": f"modbus id-{self._client.data.get('i_unit_id')}",
         }
     
     def get_device_info_meter(self, id) -> dict:
-         return {
-            "identifiers": {(DOMAIN, f'{self._name}_meter{id}')},
-            "name": f'Fronius {self._client.data.get(f'm{id}_model')} {self._client.data.get(f'm{id}_options')}',
+        return {
+            "identifiers": {(DOMAIN, f"{self._name}_meter{id}")},
+            "name": f"Fronius {self._client.data.get(f'm{id}_model')} {self._client.data.get(f'm{id}_options')}",
             "manufacturer": self._client.data.get(f'm{id}_manufacturer'),
             "model": self._client.data.get(f'm{id}_model'),
             "serial_number": self._client.data.get(f'm{id}_serial'),
             "sw_version": self._client.data.get(f'm{id}_sw_version'),
-            #"hw_version": f'modbus id-{self._client.data.get(f'm{id}_unit_id')}',
+            #"hw_version": f"modbus id-{self._client.data.get(f'm{id}_unit_id')}",
         }
 
     @property
@@ -270,7 +270,7 @@ class Hub:
 
     @toggle_busy
     async def set_discharge_limit(self, value):
-        await self._client.set_charge_limit(value)
+        await self._client.set_discharge_limit(value)
 
     @toggle_busy
     async def set_grid_charge_power(self, value):
