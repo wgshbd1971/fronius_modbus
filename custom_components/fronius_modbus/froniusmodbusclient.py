@@ -52,8 +52,8 @@ class FroniusModbusClient(ExtModbusClient):
         self.mppt_configured = False
         self.storage_configured = False
         self.storage_extended_control_mode = 0
-        self.max_charge_rate_w = 11000
-        self.max_discharge_rate_w = 11000
+        self.max_charge_rate_w = 10000
+        self.max_discharge_rate_w = 10000
         self._grid_frequency = 50
         self._grid_frequency_lower_bound = self._grid_frequency - 0.2
         self._grid_frequency_upper_bound = self._grid_frequency + 0.2
@@ -407,16 +407,16 @@ class FroniusModbusClient(ExtModbusClient):
         control_mode = self.data.get('control_mode')
         if control_mode is None or control_mode != STORAGE_CONTROL_MODE.get(storage_control_mode):
             if discharge_power >= 0:
-                self.data['discharge_limit'] = discharge_power / 100.0 
+                self.data['discharge_limit'] = discharge_power / 100.0
                 self.data['grid_charge_power'] = 0
-            else: 
-                self.data['grid_charge_power'] = (discharge_power * -1) / 100.0 
+            else:
+                self.data['grid_charge_power'] = (discharge_power * -1) / 10000.0 * self.max_discharge_rate_w
                 self.data['discharge_limit'] = 0
             if charge_power >= 0:
-                self.data['charge_limit'] = charge_power / 100 
+                self.data['charge_limit'] = charge_power / 100
                 self.data['grid_discharge_power'] = 0
-            else: 
-                self.data['grid_discharge_power'] = (charge_power * -1) / 100.0 
+            else:
+                self.data['grid_discharge_power'] = (charge_power * -1) / 10000.0 * self.max_charge_rate_w
                 self.data['charge_limit'] = 0
 
             self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
@@ -581,7 +581,7 @@ class FroniusModbusClient(ExtModbusClient):
         if self.storage_extended_control_mode in [1,3,6]:
             # only change when charge limit is used
             await self.set_charge_rate_w(value)
-            self.data['charge_limit'] = value
+            self.data['charge_limit'] = value / self.max_charge_rate_w * 100
         elif self.storage_extended_control_mode in [4,5,7]:
             return
         elif self.storage_extended_control_mode in [0,2]:
@@ -591,7 +591,7 @@ class FroniusModbusClient(ExtModbusClient):
         if self.storage_extended_control_mode in [2,3,7]:
             # only change when discharge limit is used
             await self.set_discharge_rate_w(value)
-            self.data['discharge_limit'] = value
+            self.data['discharge_limit'] = value / self.max_discharge_rate_w * 100
         elif self.storage_extended_control_mode in [4,5,6]:
             return
         elif self.storage_extended_control_mode in [0,1]:
@@ -648,14 +648,14 @@ class FroniusModbusClient(ExtModbusClient):
 
     async def set_grid_charge_mode(self):
         grid_charge_power = 0
-        discharge_rate = grid_charge_power * -1
+        discharge_rate = grid_charge_power / self.max_discharge_rate_w * -100
         await self.change_settings(mode=2, charge_limit=100, discharge_limit=discharge_rate, grid_charge_power=grid_charge_power)
         self.storage_extended_control_mode = 4
         _LOGGER.info(f"Forced charging at {grid_charge_power}")
 
     async def set_grid_discharge_mode(self):
         grid_discharge_power = 0
-        charge_rate = grid_discharge_power * -1
+        charge_rate = grid_discharge_power / self.max_charge_rate_w * -100
         await self.change_settings(mode=1, charge_limit=charge_rate, discharge_limit=100, grid_discharge_power=grid_discharge_power)
         self.storage_extended_control_mode = 5
         _LOGGER.info(f"Forced discharging to grid {grid_discharge_power}")
