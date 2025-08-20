@@ -14,7 +14,6 @@ class FroniusModbusBaseEntity():
         self._hub:Hub = hub
         self._key = key
         self._name = name
-        self._unit_of_measurement = unit
         self._icon = icon
         self._device_info = device_info
         if not device_class is None:
@@ -23,16 +22,20 @@ class FroniusModbusBaseEntity():
             self._attr_state_class = state_class
         if not entity_category is None:
             self._attr_entity_category = entity_category
-        if not options is None:
+        if unit is not None:
+            # use native units to support numbers and sensors
+            self._attr_native_unit_of_measurement = unit
+            self._attr_unit_of_measurement = unit
+        if options is not None:
             self._options_dict = options
             self._attr_options = list(options.values())
-        if not min is None:
+        if min is not None:
             self._attr_native_min_value = min
-        if not max is None:
+        if max is not None:
             self._attr_native_max_value = max
-        if not native_step is None:
+        if native_step is not None:
             self._attr_native_step = native_step
-        if not mode is None:
+        if mode is not None:
             self._attr_mode = mode
 
         self._attr_has_entity_name = True
@@ -59,7 +62,7 @@ class FroniusModbusBaseEntity():
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement."""
-        return self._unit_of_measurement
+        return self._attr_native_unit_of_measurement
 
     @property
     def icon(self):
