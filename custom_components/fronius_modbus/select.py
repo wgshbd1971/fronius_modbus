@@ -6,6 +6,7 @@ from .const import (
 )
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.helpers.entity import EntityCategory
 
 from .hub import Hub
 from .base import FroniusModbusBaseEntity
@@ -27,6 +28,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
                 name=select_info[0],
                 key=select_info[1],
                 options=select_info[2],
+                entity_category=EntityCategory.CONFIG,
             )
             entities.append(select)
 
