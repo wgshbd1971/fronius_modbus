@@ -89,10 +89,15 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
 
     @property
     def available(self) -> bool:
-        """Number entities should always be available.
-
-        Users can preconfigure values even when the corresponding
-        control mode is not active. The values will only be applied to
-        the inverter once the relevant control mode is selected.
-        """
-        return True
+        """Return depending on mode."""
+        if self._key == 'minimum_reserve':
+            return True
+        if self._key == 'charge_limit' and self._hub.storage_extended_control_mode in [1,3,6]:
+            return True
+        if self._key == 'discharge_limit' and self._hub.storage_extended_control_mode in [2,3,7]:
+            return True
+        if self._key == 'grid_charge_power' and self._hub.storage_extended_control_mode in [4]:
+            return True
+        if self._key == 'grid_discharge_power' and self._hub.storage_extended_control_mode in [5]:
+            return True
+        return False
