@@ -51,24 +51,30 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     return True
 
 class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
-    """Representation of a Battery Storage Modbus number."""
+    """Representation of an Battery Storage Modbus number."""
 
     @property
-    def native_value(self) -> float | None:
-        """Return the current value in watts."""
+    def state(self):
+        """Return the state of the sensor."""
 
-        if self._key not in self._hub.data:
-            return None
+        if self._key in self._hub.data:
+            if self._key in ['grid_discharge_power','discharge_limit']:
+                value = round(self._hub.data[self._key] / 100.0 * self._hub.max_discharge_rate_w,0)
+            elif self._key in ['grid_charge_power','charge_limit']:
+                value = round(self._hub.data[self._key] / 100.0 * self._hub.max_charge_rate_w,0)
+            else:
+                value = self._hub.data[self._key]    
+            return value
 
-        if self._key == "discharge_limit":
-            max_rate = self._hub.max_discharge_rate_w or 10000
-            return round(self._hub.data[self._key] / 100.0 * max_rate, 0)
-
-        if self._key == "charge_limit":
-            max_rate = self._hub.max_charge_rate_w or 10000
-            return round(self._hub.data[self._key] / 100.0 * max_rate, 0)
-
-        return self._hub.data[self._key]
+    # @property
+    # def native_value(self) -> float:
+    #     if self._key in self._hub.data:
+    #         _LOGGER.debug(f'native_value {self._key}')
+    #         if self._key in ['grid_discharge_power','discharge_limit']:
+    #             return self._hub.data[self._key]/100.0 * self._hub.max_discharge_rate_w
+    #         elif self._key in ['grid_charge_power','charge_limit']:
+    #             return self._hub.data[self._key]/100.0 * self._hub.max_charge_rate_w
+    #         return self._hub.data[self._key]
 
     async def async_set_native_value(self, value: float) -> None:
         """Change the selected value."""
