@@ -1,125 +1,238 @@
-# fronius_modbus THIS IS A COPY AS I COULDNT GET ORIGINAL WORKING! Do not use this as i suck at coding, but trying my best.
-Home assistant Custom Component for reading data from Fronius Gen24 Inverter and connected smart meters and battery storage. This integration uses a local modbus connection. 
+# Fronius Modbus for Home Assistant
+
+Unofficial Home Assistant custom integration for reading Fronius GEN24 inverter, smart meter, MPPT, and battery-storage data over a local Modbus TCP connection. The integration can also expose battery-storage controls for reserve, charge/discharge limits, grid charging, grid discharging, and storage control mode.
 
 > [!CAUTION]
-> This is a work in progress project - it is still in early development stage, so there are still breaking changes possible.
+> This project is unofficial, experimental, and not supported by Fronius or Home Assistant.
 >
-> This is an unofficial implementation and not supported by Fronius. It might stop working at any point in time.
-> You are using this module (and it's prerequisites/dependencies) at your own risk. Not me neither any of contributors to this or any prerequired/dependency project are responsible for damage in any kind caused by this project or any of its prerequsites/dependencies.
+> Use it at your own risk. Modbus control can change inverter and battery behaviour, so make sure you understand each setting before changing values.
 
-# Installation
+## Current state
 
-Copy the `fronius_modbus` directory from `custom_components` to your Home Assistant `config/custom_components` folder.
-After a restart of Home Assistant, configure the integration through the UI.
+- Integration domain: `fronius_modbus`.
+- Current manifest version: `0.1.7`.
+- Home Assistant platforms: `sensor`, `number`, and `select`.
+- Connection type: local Modbus TCP polling.
+- Default port: `502`.
+- Default scan interval: `10` seconds.
+- Minimum setup scan interval: `5` seconds.
+- Required Python package: `pymodbus>=3.9.2`.
+- Config flow setup is supported through the Home Assistant UI.
+- One inverter Modbus unit/slave ID and one meter Modbus unit/slave ID are configurable in the UI.
+- The integration validates that inverter and meter Modbus IDs are unique.
+- The integration checks for Fronius as the inverter manufacturer during setup.
+- `Primo GEN24` and `Symo GEN24` are the explicitly recognised model prefixes. Other Fronius models may log a warning because they are untested.
 
-Make sure modbus is enabled on the inverter. You can check by going into the web interface of the inverter and go to:
-"Communication" -> "Modbus"
-
-And turn on:
-- "Con­trol sec­ond­ary in­ver­t­er via Mod­bus TCP"
-- "Allow control"
-- Make sure that under 'SunSpec Model Type' has 'int + SF' selected. 
-
-![modbus settings](images/modbus_settings.png?raw=true "modbus")
-
-
-> [!IMPORTANT]
-> Turn off scheduled (dis)charging in the web UI to avoid unexpected behavior.
+## Important notes
 
 > [!IMPORTANT]
-> This integration requires `pymodbus` 3.9.2 or newer. When using multiple integrations that use the `pymodbus` package it can lead to version conflicts as they will share one package in HA. This can be fixed by removing ALL integrations using pymodbus and modbus configuration.yaml (for the built-in integration into HA), rebooting HA and then reinstalling the integrations and the modbus configuration yaml.
+> Before using control features, turn off scheduled battery charging/discharging in the Fronius web UI to avoid conflicting commands.
 
 > [!IMPORTANT]
-> Update your GEN24 inverter firmware to 1.34.6-1 or higher otherwise battery charging might be limited.
+> Update your GEN24 inverter firmware to `1.34.6-1` or newer if battery charging appears limited.
 
-# Usage
+> [!IMPORTANT]
+> This integration requires `pymodbus` `3.9.2` or newer. If another Home Assistant integration also uses `pymodbus`, all integrations share the same installed package version, which can cause conflicts. If that happens, remove all custom integrations and YAML Modbus configuration that depend on `pymodbus`, restart Home Assistant, and reinstall/reconfigure them.
 
-### Battery Storage
+## Installation
 
-### Controls
-| Entity  | Description |
-| --- | --- |
-| Discharge Limit | This is maxium discharging power in watts of which the battery can be discharged by.  |
-| Grid Charge Power | The charging power in watts when the storage is being charged from the grid. Note that grid charging is seems to be limited to an effictive 50% by the hardware. |
-| Grid Discharge Power | The discharging power in watts when the storage is being discharged to the grid. |
-| Minimum Reserve | The minimum reserve for storage when discharging. Note that the storage will charge from the grid with 0.5kW if SOC falls below this level. Called 'Reserve Capacity' in Fronius Web UI. |
-| PV Charge Limit  | This is maximum PV charging power in watts of which the battery can be charged by.  |
+1. Copy the `custom_components/fronius_modbus` directory into your Home Assistant `config/custom_components` directory.
+2. Restart Home Assistant.
+3. Go to **Settings** → **Devices & services**.
+4. Add the **Fronius Modbus** integration.
+5. Enter the inverter host/IP address, port, inverter Modbus unit ID, meter Modbus unit ID, and scan interval.
 
-### Storage Control Modes
-| Mode  | Description |
-| --- | --- |
-| Auto  | The storage will allow charging and discharging up to the minimum reserve. |
-| PV Charge Limit | The storage can be charged with PV power at a limited rate. Limit will be set to maximum power after change.  |
-| Discharge Limit | The storage can be charged with PV power and discharged at a limited rate.  in Fronius Web UI. Limit will be set to maximum power after change. |
-| PV Charge and Discharge Limit | Allows setting both PV charge and discharge limits. Limits will be set to maximum power after change. |
-| Charge from Grid | The storage will be charged from the grid using the charge rate from 'Grid Charge Power'. Power will be set 0 after change. |
-| Discharge to Grid | The storage will discharge to the gird using the discharge rate from 'Gird Discharge Power'. Power will be set 0 after change. |
-| Block discharging | The storage can only be charged with PV power. Charge limit will be set to maximum power. |
-| Block charging | The can only be discharged and won't be charged with PV power. Discharge limit will be set to maximum power. |
+## Fronius inverter Modbus settings
 
-Note to change the mode first then set controls active in that mode.
+Enable Modbus TCP in the Fronius inverter web interface:
 
-### Controls used by Modes
-| Mode | Charge Limit | Discharge Limit | Grid Charge Power |  Grid Discharge Power | Minimum Reserve | 
-| --- | --- | --- | --- | --- | --- |
-| Auto | Ignored (100%) | Ignored (100%) | Ignored (0%) | Ignored (0%) | Used | 
-| PV Charge Limit | Used | Ignored (100%) | Ignored (0%) | Ignored (0%) | Used |
-| Discharge Limit  | Ignored (100%) | Used | Ignored (0%) | Ignored (0%) | Used |
-| PV Charge and Discharge Limit  | Used | Used | Ignored (0%) | Ignored (0%) | Used |
-| Charge from Grid | Ignored | Ignored | Used | Ignored (0%) | Used |
-| Charge from Grid | Ignored | Ignored | Ignored (0%) | Used | Used |
-| Block discharging | Used | Ignored (0%) | Ignored (0%) | Ignored (0%) | Used |
-| Block charging | Ignored (0%) | Used | Ignored (0%) | Ignored (0%) | Used |
+1. Open the inverter web interface.
+2. Go to **Communication** → **Modbus**.
+3. Enable **Control secondary inverter via Modbus TCP**.
+4. Enable **Allow control** if you want Home Assistant to change battery-control values.
+5. Set **SunSpec Model Type** to **int + SF**.
 
-### Fronius Web UI mapping
-| Web UI name | Integration Control | Integration Mode |
+![Fronius Modbus settings](images/modbus_settings.png?raw=true "Fronius Modbus settings")
+
+## Configuration options
+
+| Option | Default | Notes |
+| --- | ---: | --- |
+| Name | `Fronius` | Used for Home Assistant device/entity naming. |
+| Host | Required | Inverter hostname or IP address. |
+| Port | `502` | Modbus TCP port. |
+| Inverter Modbus Unit/Slave ID | `1` | Must be different from the meter unit ID. |
+| Meter Modbus Unit/Slave ID | `200` | Must be different from the inverter unit ID. |
+| Scan interval | `10` seconds | Setup rejects intervals below `5` seconds. |
+
+## Devices and entities
+
+The integration creates Home Assistant devices for the inverter, configured smart meter, and battery storage when the relevant data is detected.
+
+### Inverter sensors
+
+| Entity | Unit/category | Description |
 | --- | --- | --- |
-| Max. charging power | PV Charge Limit | PV Charge Limit |
-| Min. charging power | Grid Charging Power | Charge from Grid |
-| Max. discharging power | Discharge Limit | Discharge Limit |
-| Min. discharging power | Grid Discharge Power | Grid Discharge Power | 
+| AC power | W | Current inverter AC power. |
+| AC energy | Wh | Inverter lifetime AC energy. |
+| Temperature | °C | Cabinet temperature. |
+| MPPT1 power | W | MPPT 1 power. |
+| MPPT2 power | W | MPPT 2 power. |
+| PV power | W | Combined PV power. |
+| MPPT1 lifetime energy | Wh | MPPT 1 lifetime energy. |
+| MPPT2 lifetime energy | Wh | MPPT 2 lifetime energy. |
+| Load | W | Calculated load based on meter AC power and inverter AC power. |
+| Line frequency | Hz | Inverter line frequency. |
+| Maximum power | W | Inverter maximum power. |
+| AC voltage L1-N | V | Inverter L1 to neutral voltage. |
+| AC voltage L2-N | V | Symo three-phase voltage sensor. |
+| AC voltage L3-N | V | Symo three-phase voltage sensor. |
+| AC voltage L1-L2 | V | Symo line-to-line voltage sensor. |
+| AC voltage L2-L3 | V | Symo line-to-line voltage sensor. |
+| AC voltage L3-L1 | V | Symo line-to-line voltage sensor. |
 
-### Battery Storage Sensors
-| Entity  | Description |
+### Inverter diagnostic sensors
+
+| Entity | Description |
 | --- | --- |
-| Charge Status | Holding / Charging / Discharging |
-| Minimum Reserve | This is minium level to which the battery can be discharged and will be charged from the grid if falls below. Called 'Reserve Capacity' in Web UI. |
-| State of Charge | The current battery level |
+| PV connection | PV connection/status diagnostic. |
+| Electrical connection | Electrical connection/status diagnostic. |
+| Status | Vendor inverter status. |
+| Control mode | Inverter control mode diagnostic. |
+| Events | Vendor event bitmask as text. |
+| Grid status | Grid status based on inverter and/or meter frequency. |
+| Connection control | SunSpec connection-control state. |
+| Throttle control | Active power limit enable state. |
+| Fixed power factor | Fixed power factor enable state. |
+| Limit VAr control | Reactive-power limit enable state. |
+| Modbus ID | Inverter Modbus unit ID. |
 
-### Diagnostic
-| Entity  | Description |
+### Smart meter sensors
+
+Smart meter entities are created when a meter is configured and detected.
+
+| Entity | Unit/category | Description |
+| --- | --- | --- |
+| Meter 1 Power | W | Current meter power. |
+| Meter 1 Exported | Wh | Exported energy. |
+| Meter 1 Imported | Wh | Imported energy. |
+| Meter 1 Line frequency | Hz | Meter line frequency. |
+| Meter 1 AC voltage L1-N | V | L1 to neutral voltage. |
+| Meter 1 AC voltage L2-N | V | L2 to neutral voltage. |
+| Meter 1 AC voltage L3-N | V | L3 to neutral voltage. |
+| Meter 1 AC voltage Line to Line | V | Line-to-line voltage. |
+| Meter 1 Modbus ID | Diagnostic | Meter Modbus unit ID. |
+
+### Battery-storage sensors
+
+Battery-storage entities are created when storage is configured and detected.
+
+| Entity | Unit/category | Description |
+| --- | --- | --- |
+| Storage charging power | W | Inverter-side storage charging power. |
+| Storage discharging power | W | Inverter-side storage discharging power. |
+| Storage connection | Diagnostic | Storage connection/status diagnostic. |
+| Storage power | W | Storage power. |
+| Storage charging lifetime energy | Wh | Lifetime storage charging energy. |
+| Storage discharging lifetime energy | Wh | Lifetime storage discharging energy. |
+| Core storage control mode | Diagnostic | Core storage control mode. |
+| Charge status | Diagnostic | Holding, charging, or discharging state. |
+| Max charging power | W / diagnostic | Current maximum charging power. |
+| State of charge | % | Battery state of charge. |
+| Charging power | % / diagnostic | Charging-power percentage value. |
+| Discharging power | % / diagnostic | Discharging-power percentage value. |
+| Minimum reserve | % | Reserve capacity. The battery may charge from the grid if SOC falls below this value. |
+| Grid charging | Diagnostic | Grid-charging diagnostic state. |
+| Capacity | Wh / diagnostic | Storage capacity rating. |
+| Maximum charge rate | W / diagnostic | Storage maximum charge rate. |
+| Maximum discharge rate | W / diagnostic | Storage maximum discharge rate. |
+
+## Battery-storage controls
+
+Battery-storage controls are only created when storage is configured and detected.
+
+### Number controls
+
+| Entity | Range/step | Description |
+| --- | --- | --- |
+| Grid discharge power | `0` W to detected maximum discharge rate, step `10` W | Discharging power when exporting battery energy to the grid. |
+| Grid charge power | `0` W to detected maximum charge rate, step `10` W | Charging power when charging the battery from the grid. Grid charging may be effectively limited by the hardware. |
+| Discharge limit | `0` W to detected maximum discharge rate, step `10` W | Maximum battery discharging power. |
+| PV charge limit | `0` W to detected maximum charge rate, step `10` W | Maximum PV charging power into the battery. |
+| Minimum reserve | `5`% to `100`%, step `1`% | Reserve capacity / minimum battery level. |
+
+`PV charge limit` and `Discharge limit` are displayed in watts. When Fronius reports the underlying values as percentages, the integration converts them using the detected maximum charge/discharge rate.
+
+### Storage control mode select
+
+| Mode | Description |
 | --- | --- |
-To come!
+| Auto | Normal automatic storage operation down to the configured minimum reserve. |
+| PV Charge Limit | Allows PV charging with a configurable charge limit. |
+| Discharge Limit | Allows discharging with a configurable discharge limit. |
+| PV Charge and Discharge Limit | Allows both PV charge and discharge limits. |
+| Charge from Grid | Charges the battery from the grid using **Grid charge power**. |
+| Discharge to Grid | Discharges the battery to the grid using **Grid discharge power**. |
+| Block Discharging | Allows charging but blocks discharging. |
+| Block Charging | Allows discharging but blocks charging. |
 
+Change the storage control mode first, then set the number control that is active for that mode.
 
-### Inverter Sensors
-| Entity  | Description |
-| --- | --- |
-| Load | The current total power consumption which is derived by adding up the meter AC power and interver AC power. |
+### Controls active by mode
 
+| Mode | PV charge limit | Discharge limit | Grid charge power | Grid discharge power | Minimum reserve |
+| --- | --- | --- | --- | --- | --- |
+| Auto | Ignored | Ignored | Ignored | Ignored | Used |
+| PV Charge Limit | Used | Ignored | Ignored | Ignored | Used |
+| Discharge Limit | Ignored | Used | Ignored | Ignored | Used |
+| PV Charge and Discharge Limit | Used | Used | Ignored | Ignored | Used |
+| Charge from Grid | Ignored | Ignored | Used | Ignored | Used |
+| Discharge to Grid | Ignored | Ignored | Ignored | Used | Used |
+| Block Discharging | Used | Ignored | Ignored | Ignored | Used |
+| Block Charging | Ignored | Used | Ignored | Ignored | Used |
 
-### Inverter Diagnostics
-| Entity  | Description |
-| --- | --- |
-| Grid status | Grid status based on meter and interter frequency. If inverter frequency is 53hz it is running in off grid mode and normally in 50hz. When the inverter is sleeping the meter frequency is checked for connection. |
+### Fronius web UI mapping
 
+| Fronius web UI name | Integration control | Integration mode |
+| --- | --- | --- |
+| Max. charging power | PV charge limit | PV Charge Limit / PV Charge and Discharge Limit / Block Discharging |
+| Min. charging power | Grid charge power | Charge from Grid |
+| Max. discharging power | Discharge limit | Discharge Limit / PV Charge and Discharge Limit / Block Charging |
+| Min. discharging power | Grid discharge power | Discharge to Grid |
+| Reserve Capacity | Minimum reserve | Any storage control mode |
 
-# Example Devices (Outdated screenshots!)
+## Example screenshots
+
+The screenshots below are examples and may not match the current entity set exactly.
 
 Battery Storage
-![battery storage](images/example_batterystorage0.png?raw=true "storage")
+
+![Battery storage example](images/example_batterystorage0.png?raw=true "Battery storage")
 
 Battery Storage Actions
-![battery storage actions](images/example_batterystorage.png?raw=true "storage actions")
+
+![Battery storage actions example](images/example_batterystorage.png?raw=true "Battery storage actions")
 
 Smart Meter
-![smart meter](images/example_meter.png?raw=true "meter")
 
-Inverter 
-![smart meter](images/example_inverter.png?raw=true "inverter")
+![Smart meter example](images/example_meter.png?raw=true "Smart meter")
 
+Inverter
 
-# References
-- https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf
-- https://github.com/binsentsu/home-assistant-solaredge-modbus/
-- https://github.com/bigramonk/byd_charging
+![Inverter example](images/example_inverter.png?raw=true "Inverter")
+
+## Troubleshooting
+
+- Confirm the inverter is reachable from Home Assistant on TCP port `502`.
+- Confirm Modbus TCP is enabled in the Fronius web UI.
+- Confirm **SunSpec Model Type** is set to **int + SF**.
+- Confirm inverter and meter Modbus unit IDs are unique.
+- Use a scan interval of at least `5` seconds.
+- If setup fails with unsupported hardware, check the Home Assistant log for the manufacturer/model returned by the inverter.
+- If entities do not appear, check whether the integration detected the relevant meter, MPPT, or storage data during setup.
+
+## References
+
+- [Fronius operating instructions PDF](https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf)
+- [home-assistant-solaredge-modbus](https://github.com/binsentsu/home-assistant-solaredge-modbus/)
+- [byd_charging](https://github.com/bigramonk/byd_charging)
