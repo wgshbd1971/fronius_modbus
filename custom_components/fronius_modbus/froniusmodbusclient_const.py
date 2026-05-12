@@ -12,6 +12,12 @@ MINIMUM_RESERVE_ADDRESS = 40350
 DISCHARGE_RATE_ADDRESS = 40355
 CHARGE_RATE_ADDRESS = 40356
 
+# SunSpec / Fronius inverter controls (active power limiting)
+WMAX_LIM_ENA_ADDRESS = 40236     # WMaxLim_Ena (uint16)
+WMAX_LIM_PCT_ADDRESS = 40237     # WMaxLimPct (uint16, scaled x100)
+CONN_CONTROL_ADDRESS = 40231     # Conn (SunSpec inverter control)
+
+
     # Manufacturer
     # Type
     # Firmware

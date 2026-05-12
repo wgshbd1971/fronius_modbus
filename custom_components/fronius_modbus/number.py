@@ -51,22 +51,23 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     return True
 
 class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
-    """Representation of an Battery Storage Modbus number."""
+    """Representation of a Battery Storage Modbus number."""
 
     @property
     def native_value(self) -> float | None:
         """Return the current value in watts."""
 
-        if self._key not in self._hub.data:
-            return None
-
         if self._key == "discharge_limit":
+            value = self._hub.data[self._key]
             max_rate = self._hub.max_discharge_rate_w or 10000
-            return round(self._hub.data[self._key] / 100.0 * max_rate, 0)
+            # Only convert when value is percent (Fronius reports 0–100)
+            return round(value / 100.0 * max_rate, 0) if value <= 100 else value
 
         if self._key == "charge_limit":
+            value = self._hub.data[self._key]
             max_rate = self._hub.max_charge_rate_w or 10000
-            return round(self._hub.data[self._key] / 100.0 * max_rate, 0)
+            # Only convert when value is percent (Fronius reports 0–100)
+            return round(value / 100.0 * max_rate, 0) if value <= 100 else value
 
         return self._hub.data[self._key]
 
@@ -101,3 +102,4 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
         if self._key == 'grid_discharge_power' and self._hub.storage_extended_control_mode in [5]:
             return True
         return False
+

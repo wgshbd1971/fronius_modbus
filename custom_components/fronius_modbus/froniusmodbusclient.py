@@ -32,6 +32,9 @@ from .froniusmodbusclient_const import (
     GRID_STATUS,
 #    INVERTER_STATUS,
 #    CONNECTION_STATUS,
+    WMAX_LIM_ENA_ADDRESS,
+    WMAX_LIM_PCT_ADDRESS,
+    CONN_CONTROL_ADDRESS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -103,6 +106,9 @@ class FroniusModbusClient(ExtModbusClient):
 
         _LOGGER.debug(f"Init done. data: {self.data}")
 
+        #await self.set_active_power_control_enabled(True)
+        #await self.set_pv_limit_pct(10.0)
+
         return True
     
     def get_json_storage_info(self):
@@ -146,6 +152,12 @@ class FroniusModbusClient(ExtModbusClient):
         regs = await self.get_registers(unit_id=unit_id, address=COMMON_ADDRESS, count=65)
         if regs is None:
             return False
+
+        # DER Active Power Control Mode (vendor / SunSpec extension)
+        ActPwrMod = self._client.convert_from_registers(
+            regs[6:7],  # <-- this offset is critical
+            data_type=self._client.DATATYPE.UINT16
+         )
 
         manufacturer = self.get_string_from_registers(regs[0:16])
         model = self.get_string_from_registers(regs[16:32])
@@ -206,6 +218,12 @@ class FroniusModbusClient(ExtModbusClient):
         self.data["statusvendor_id"] = StVnd
         #self.data["events1"] = self.bitmask_to_string(EvtVnd1,INVERTER_EVENTS,default='None',bits=32)  
         self.data["events2"] = self.bitmask_to_string(EvtVnd2,INVERTER_EVENTS,default='None',bits=32)  
+
+        _LOGGER.warning(
+            f"INV status: statusvendor={self.data['statusvendor']} "
+            f"(id={self.data['statusvendor_id']}) "
+            f"acpower={self.data.get('acpower')}"
+        )
 
         return True
 
@@ -278,14 +296,32 @@ class FroniusModbusClient(ExtModbusClient):
             return False
 
         Conn = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
+        ActPwrMod = self._client.convert_from_registers(regs[6:7], data_type=self._client.DATATYPE.UINT16)
         WMaxLim_Ena = self._client.convert_from_registers(regs[7:8], data_type = self._client.DATATYPE.UINT16)
+        WMaxLimPct = self._client.convert_from_registers(regs[8:9], data_type=self._client.DATATYPE.UINT16)
         OutPFSet_Ena = self._client.convert_from_registers(regs[12:13], data_type = self._client.DATATYPE.UINT16)
         VArPct_Ena = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
 
         self.data['Conn'] = CONTROL_STATUS[Conn]
+        self.data['ActPwrMod'] = ActPwrMod
         self.data['WMaxLim_Ena'] = CONTROL_STATUS[WMaxLim_Ena]
+        self.data['WMaxLimPct'] = WMaxLimPct / 100.0
         self.data['OutPFSet_Ena'] = CONTROL_STATUS[OutPFSet_Ena]
         self.data['VArPct_Ena'] = CONTROL_STATUS[VArPct_Ena]
+
+        _LOGGER.warning(
+            "DER Active Power Mode: ActPwrMod=%s (raw)", 
+            ActPwrMod
+        )
+
+        _LOGGER.warning("PV limit: Ena=%s Pct=%s", self.data.get('WMaxLim_Ena'), self.data.get('WMaxLimPct'))
+        
+        _LOGGER.warning(
+            f"INV controls: Conn={self.data['Conn']} "
+            f"WMaxLim_Ena={self.data['WMaxLim_Ena']} "
+            f"OutPFSet_Ena={self.data['OutPFSet_Ena']} "
+            f"VArPct_Ena={self.data['VArPct_Ena']}"
+        )
 
         return True
 
@@ -413,7 +449,7 @@ class FroniusModbusClient(ExtModbusClient):
                 self.data['grid_charge_power'] = (discharge_power * -1) / 100.0 
                 self.data['discharge_limit'] = 0
             if charge_power >= 0:
-                self.data['charge_limit'] = charge_power / 100 
+                self.data['charge_limit'] = charge_power / 100.0 
                 self.data['grid_discharge_power'] = 0
             else: 
                 self.data['grid_discharge_power'] = (charge_power * -1) / 100.0 
@@ -580,7 +616,7 @@ class FroniusModbusClient(ExtModbusClient):
     async def set_charge_limit(self, value):
         if self.storage_extended_control_mode in [1,3,6]:
             # only change when charge limit is used
-            await self.set_charge_rate_w(value)
+            await self.set_charge_rate_w(value * -1)
             self.data['charge_limit'] = value
         elif self.storage_extended_control_mode in [4,5,7]:
             return
@@ -676,3 +712,39 @@ class FroniusModbusClient(ExtModbusClient):
         await self.change_settings(mode=2, charge_limit=100, discharge_limit=-100, grid_charge_power=100)
         self.storage_extended_control_mode = 8
         _LOGGER.info(f"Auto mode")
+
+    async def set_pv_limit_enabled(self, enabled: bool):
+        """Enable or disable inverter active power (PV) limiting."""
+        await self.write_registers(
+            unit_id=self._inverter_unit_id,
+            address=WMAX_LIM_ENA_ADDRESS,
+            payload=[1 if enabled else 0],
+        )
+
+    async def set_pv_limit_pct(self, pct: float):
+        """Set inverter active power limit as a percentage (0–100)."""
+        pct = max(0.0, min(100.0, pct))
+        await self.write_registers(
+            unit_id=self._inverter_unit_id,
+            address=WMAX_LIM_PCT_ADDRESS,
+            payload=[int(pct * 100)],
+        )
+        self.data['WMaxLimPct'] = pct
+
+    async def set_inverter_control_enabled(self, enabled: bool):
+        """Enable SunSpec inverter control block."""
+        await self.write_registers(
+            unit_id=self._inverter_unit_id,
+            address=CONN_CONTROL_ADDRESS,
+            payload=[1 if enabled else 0],
+        )
+
+    async def set_active_power_control_enabled(self, enabled: bool):
+        value = 1 if enabled else 0
+        _LOGGER.warning(f"Setting active power control = {value}")
+
+        await self.write_registers(
+            unit_id=self._inverter_unit_id,
+            address=40229 + 7,  # WMaxLim_Ena offset (already confirmed)
+            payload=[value],
+        )
