@@ -10,7 +10,7 @@ Unofficial Home Assistant custom integration for reading Fronius GEN24 inverter,
 ## Current state
 
 - Integration domain: `fronius_modbus`.
-- Current manifest version: `0.1.7`.
+- Current manifest version: `0.2.0`.
 - Home Assistant platforms: `sensor`, `number`, and `select`.
 - Connection type: local Modbus TCP polling.
 - Default port: `502`.
@@ -106,6 +106,21 @@ The integration creates Home Assistant devices for the inverter, configured smar
 | Fixed power factor | Fixed power factor enable state. |
 | Limit VAr control | Reactive-power limit enable state. |
 | Modbus ID | Inverter Modbus unit ID. |
+
+## Solar-output controls
+
+Two manual controls are created on the inverter device:
+
+| Entity | Options/range | Description |
+| --- | --- | --- |
+| Solar output control | `Auto`, `Limited` | `Auto` disables the SunSpec active-power ceiling. `Limited` applies the configured ceiling. |
+| Solar output limit | `0` W to detected inverter maximum, step `10` W | Active-power ceiling for the inverter. The integration converts watts to the SunSpec percentage value and verifies every write by reading it back. |
+
+Set **Solar output limit** before selecting **Limited**. Select **Auto** to remove the ceiling and return output control to the inverter. The limit applies to inverter AC output; it is not a closed-loop grid-export limit. Battery charging and site load can therefore affect the grid-meter reading.
+
+GEN24 output changes are ramped rather than instantaneous. Allow roughly 90–100 seconds before deciding that a new ceiling has not taken effect. Another active controller, such as Solar.web/Amber cloud control or a higher-priority local rule, can override the Modbus command; Modbus must be allowed in the inverter settings and placed at the intended control priority.
+
+> A value of `0` W is supported, but test a nonzero limit first on each inverter/firmware combination. The integration keeps the inverter grid-connected and uses the power-reduction control; it does not write the standby/disconnect command.
 
 ### Smart meter sensors
 
