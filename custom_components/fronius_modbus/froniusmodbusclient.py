@@ -35,6 +35,7 @@ from .froniusmodbusclient_const import (
     WMAX_LIM_ENA_ADDRESS,
     WMAX_LIM_PCT_ADDRESS,
     CONN_CONTROL_ADDRESS,
+    IMMEDIATE_CONTROL_DATA_ADDRESS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,6 +64,10 @@ class FroniusModbusClient(ExtModbusClient):
 
         self._inverter_frequency_lower_bound = self._grid_frequency - 5
         self._inverter_frequency_upper_bound = self._grid_frequency + 5
+
+        # Fronius GEN24 int+SF currently reports -2, but SunSpec requires
+        # clients to read and apply the scale factor rather than assume it.
+        self.wmax_limit_pct_sf = None
 
         self.data = {}
 
@@ -104,6 +109,24 @@ class FroniusModbusClient(ExtModbusClient):
         if await self.read_inverter_nameplate_data() == False:
             _LOGGER.error(f"Error reading nameplate data", exc_info=True)
 
+        # Read the inverter rating and current control state before entities are
+        # created. This supplies the correct range and initial state for the
+        # manual solar-output controls.
+        if await self.read_inverter_model_settings_data() == False:
+            _LOGGER.error("Error reading initial inverter model settings")
+        if await self.read_inverter_controls_data() == False:
+            _LOGGER.error("Error reading initial inverter controls")
+
+        # Populate storage controls before Home Assistant creates number entities.
+        # Without this initial read, controls such as minimum reserve do not yet
+        # exist in self.data and raise a KeyError during platform setup.
+        if self.storage_configured:
+            try:
+                if await self.read_inverter_storage_data() == False:
+                    _LOGGER.error("Error reading initial storage data")
+            except Exception:
+                _LOGGER.error("Error reading initial storage data", exc_info=True)
+
         _LOGGER.debug(f"Init done. data: {self.data}")
 
         #await self.set_active_power_control_enabled(True)
@@ -119,7 +142,7 @@ class FroniusModbusClient(ExtModbusClient):
         url = f"http://{self._host}/solar_api/v1/GetStorageRealtimeData.cgi"
 
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
@@ -214,7 +237,7 @@ class FroniusModbusClient(ExtModbusClient):
         self.data["line_frequency"] = self.calculate_value(Hz, Hz_SF, 2, 0, 100)
         self.data["acenergy"] = self.calculate_value(WH, WH_SF) 
         #self.data["status"] = INVERTER_STATUS[St]
-        self.data["statusvendor"] = FRONIUS_INVERTER_STATUS[StVnd]
+        self.data["statusvendor"] = FRONIUS_INVERTER_STATUS.get(StVnd, f'Unknown ({StVnd})')
         self.data["statusvendor_id"] = StVnd
         #self.data["events1"] = self.bitmask_to_string(EvtVnd1,INVERTER_EVENTS,default='None',bits=32)  
         self.data["events2"] = self.bitmask_to_string(EvtVnd2,INVERTER_EVENTS,default='None',bits=32)  
@@ -264,9 +287,9 @@ class FroniusModbusClient(ExtModbusClient):
 
         StActCtl = self._client.convert_from_registers(regs[33:35], data_type = self._client.DATATYPE.UINT32)
         
-        self.data['pv_connection'] = CONNECTION_STATUS_CONDENSED[PVConn]
-        self.data['storage_connection'] = CONNECTION_STATUS_CONDENSED[StorConn] 
-        self.data['ecp_connection'] = ECP_CONNECTION_STATUS[ECPConn]
+        self.data['pv_connection'] = CONNECTION_STATUS_CONDENSED.get(PVConn, f'Unknown ({PVConn})')
+        self.data['storage_connection'] = CONNECTION_STATUS_CONDENSED.get(StorConn, f'Unknown ({StorConn})')
+        self.data['ecp_connection'] = ECP_CONNECTION_STATUS.get(ECPConn, f'Unknown ({ECPConn})')
         self.data['inverter_controls'] = self.bitmask_to_string(StActCtl, INVERTER_CONTROLS, 'Normal')  
 
         return True
@@ -291,28 +314,43 @@ class FroniusModbusClient(ExtModbusClient):
         return True
 
     async def read_inverter_controls_data(self):
-        regs = await self.get_registers(unit_id=self._inverter_unit_id, address=40229, count=24)
+        regs = await self.get_registers(
+            unit_id=self._inverter_unit_id,
+            address=IMMEDIATE_CONTROL_DATA_ADDRESS,
+            count=24,
+        )
         if regs is None:
             return False
 
         Conn = self._client.convert_from_registers(regs[2:3], data_type = self._client.DATATYPE.UINT16)
-        ActPwrMod = self._client.convert_from_registers(regs[6:7], data_type=self._client.DATATYPE.UINT16)
+        WMaxLimPct = self._client.convert_from_registers(regs[3:4], data_type=self._client.DATATYPE.UINT16)
         WMaxLim_Ena = self._client.convert_from_registers(regs[7:8], data_type = self._client.DATATYPE.UINT16)
-        WMaxLimPct = self._client.convert_from_registers(regs[8:9], data_type=self._client.DATATYPE.UINT16)
         OutPFSet_Ena = self._client.convert_from_registers(regs[12:13], data_type = self._client.DATATYPE.UINT16)
         VArPct_Ena = self._client.convert_from_registers(regs[20:21], data_type = self._client.DATATYPE.INT16)
-
-        self.data['Conn'] = CONTROL_STATUS[Conn]
-        self.data['ActPwrMod'] = ActPwrMod
-        self.data['WMaxLim_Ena'] = CONTROL_STATUS[WMaxLim_Ena]
-        self.data['WMaxLimPct'] = WMaxLimPct / 100.0
-        self.data['OutPFSet_Ena'] = CONTROL_STATUS[OutPFSet_Ena]
-        self.data['VArPct_Ena'] = CONTROL_STATUS[VArPct_Ena]
-
-        _LOGGER.debug(
-            "DER Active Power Mode: ActPwrMod=%s (raw)", 
-            ActPwrMod
+        WMaxLimPct_SF = self._client.convert_from_registers(
+            regs[21:22], data_type=self._client.DATATYPE.INT16
         )
+
+        # A uint16 register must be able to represent the full 0–100% range.
+        if not -2 <= WMaxLimPct_SF <= 0:
+            _LOGGER.error(
+                "Unsupported WMaxLimPct scale factor: %s", WMaxLimPct_SF
+            )
+            return False
+
+        limit_pct = self.calculate_value(WMaxLimPct, WMaxLimPct_SF, 2, 0, 100)
+        if limit_pct is None:
+            return False
+        self.wmax_limit_pct_sf = WMaxLimPct_SF
+
+        self.data['Conn'] = CONTROL_STATUS.get(Conn, f'Unknown ({Conn})')
+        self.data['WMaxLim_Ena'] = CONTROL_STATUS.get(WMaxLim_Ena, f'Unknown ({WMaxLim_Ena})')
+        self.data['WMaxLimPct'] = limit_pct
+        max_power = self.data.get('max_power')
+        if max_power is not None:
+            self.data['pv_output_limit_w'] = round(max_power * limit_pct / 100.0)
+        self.data['OutPFSet_Ena'] = CONTROL_STATUS.get(OutPFSet_Ena, f'Unknown ({OutPFSet_Ena})')
+        self.data['VArPct_Ena'] = CONTROL_STATUS.get(VArPct_Ena, f'Unknown ({VArPct_Ena})')
 
         _LOGGER.debug("PV limit: Ena=%s Pct=%s", self.data.get('WMaxLim_Ena'), self.data.get('WMaxLimPct'))
         
@@ -479,15 +517,15 @@ class FroniusModbusClient(ExtModbusClient):
             self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[ext_control_mode]
             self.storage_extended_control_mode = ext_control_mode
 
-        if ext_control_mode == 7:
+        if self.storage_extended_control_mode == 8:
             soc = self.data.get('soc')
             if storage_control_mode == 2 and soc == 100:
                 _LOGGER.error(f'Calibration hit 100%, start discharge')
-                self.change_settings(1, 0, 100, 0)
+                await self.change_settings(1, 0, 100, 0)
             elif storage_control_mode == 3 and soc <= 5: 
                 _LOGGER.error(f'Calibration hit 5%, return to auto mode')
-                self.set_auto_mode()
-                self.set_minimum_reserve(30)
+                await self.set_auto_mode()
+                await self.set_minimum_reserve(30)
                 self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[0]
                 self.storage_extended_control_mode = 0
 
@@ -715,24 +753,110 @@ class FroniusModbusClient(ExtModbusClient):
 
     async def set_pv_limit_enabled(self, enabled: bool):
         """Enable or disable inverter active power (PV) limiting."""
+        if not await self.read_inverter_controls_data():
+            raise RuntimeError("Unable to read inverter output controls before write")
+        pct = self.data.get('WMaxLimPct', 100.0)
+        raw_pct = self._pv_pct_to_raw(pct)
+
+        # GEN24 applies this control reliably only when WMaxLimPct and
+        # WMaxLim_Ena arrive as distinct FC16 commands. A combined five-register
+        # write is acknowledged and reflected in Model 123 but does not curtail
+        # output on the tested firmware.
         await self.write_registers(
             unit_id=self._inverter_unit_id,
             address=WMAX_LIM_ENA_ADDRESS,
             payload=[1 if enabled else 0],
         )
+        await self._verify_pv_limit(raw_pct, enabled)
 
     async def set_pv_limit_pct(self, pct: float):
         """Set inverter active power limit as a percentage (0–100)."""
+        if not await self.read_inverter_controls_data():
+            raise RuntimeError("Unable to read inverter output controls before write")
         pct = max(0.0, min(100.0, pct))
+        raw_pct = self._pv_pct_to_raw(pct)
+        enabled = self.data.get('WMaxLim_Ena') == CONTROL_STATUS[1]
+
+        # Retrigger an active limit around the new setpoint. Keeping the
+        # operations separate, with a short gap, reproduces the sequence that
+        # physically curtailed the inverter during the live regression test.
+        if enabled:
+            await self.write_registers(
+                unit_id=self._inverter_unit_id,
+                address=WMAX_LIM_ENA_ADDRESS,
+                payload=[0],
+            )
+            await asyncio.sleep(1)
+
         await self.write_registers(
             unit_id=self._inverter_unit_id,
             address=WMAX_LIM_PCT_ADDRESS,
-            payload=[int(pct * 100)],
+            payload=[raw_pct],
         )
-        self.data['WMaxLimPct'] = pct
+        await asyncio.sleep(1)
+
+        if enabled:
+            await self.write_registers(
+                unit_id=self._inverter_unit_id,
+                address=WMAX_LIM_ENA_ADDRESS,
+                payload=[1],
+            )
+        await self._verify_pv_limit(raw_pct, enabled)
+
+    async def set_pv_output_limit_w(self, watts: float):
+        """Set the inverter output limit in watts, relative to nameplate power."""
+        max_power = self.data.get('max_power')
+        if not max_power or max_power <= 0:
+            raise ValueError("Inverter maximum power is unavailable")
+        watts = max(0.0, min(float(max_power), float(watts)))
+        await self.set_pv_limit_pct(watts / max_power * 100.0)
+
+    async def _verify_pv_limit(self, expected_raw_pct: int, expected_enabled: bool):
+        """Read back the active-power controls after a write."""
+        await asyncio.sleep(0.2)
+        regs = await self.get_registers(
+            unit_id=self._inverter_unit_id,
+            address=WMAX_LIM_PCT_ADDRESS,
+            count=5,
+        )
+        if regs is None:
+            raise RuntimeError("Unable to verify inverter output limit")
+        actual_raw_pct = regs[0]
+        actual_enabled = regs[4] == 1
+        if actual_raw_pct != expected_raw_pct or actual_enabled != expected_enabled:
+            raise RuntimeError(
+                "Inverter output limit verification failed: "
+                f"expected pct={expected_raw_pct} enabled={expected_enabled}, "
+                f"received pct={actual_raw_pct} enabled={regs[4]}"
+            )
+        actual_pct = self._pv_raw_to_pct(actual_raw_pct)
+        self.data['WMaxLimPct'] = actual_pct
+        self.data['WMaxLim_Ena'] = CONTROL_STATUS[1 if actual_enabled else 0]
+        max_power = self.data.get('max_power')
+        if max_power is not None:
+            self.data['pv_output_limit_w'] = round(
+                max_power * actual_pct / 100.0
+            )
+
+    def _pv_pct_to_raw(self, pct: float) -> int:
+        """Convert a percentage to the inverter's scaled register value."""
+        if self.wmax_limit_pct_sf is None:
+            raise RuntimeError("Inverter output-limit scale factor is unavailable")
+        raw_pct = round(
+            max(0.0, min(100.0, pct)) / 10**self.wmax_limit_pct_sf
+        )
+        if not 0 <= raw_pct <= 65534:
+            raise ValueError(f"Scaled inverter output limit is invalid: {raw_pct}")
+        return raw_pct
+
+    def _pv_raw_to_pct(self, raw_pct: int) -> float:
+        """Convert the inverter's scaled register value to a percentage."""
+        if self.wmax_limit_pct_sf is None:
+            raise RuntimeError("Inverter output-limit scale factor is unavailable")
+        return round(raw_pct * 10**self.wmax_limit_pct_sf, 2)
 
     async def set_inverter_control_enabled(self, enabled: bool):
-        """Enable SunSpec inverter control block."""
+        """Put the inverter into grid-feed operation or standby."""
         await self.write_registers(
             unit_id=self._inverter_unit_id,
             address=CONN_CONTROL_ADDRESS,
@@ -740,11 +864,5 @@ class FroniusModbusClient(ExtModbusClient):
         )
 
     async def set_active_power_control_enabled(self, enabled: bool):
-        value = 1 if enabled else 0
-        _LOGGER.warning(f"Setting active power control = {value}")
-
-        await self.write_registers(
-            unit_id=self._inverter_unit_id,
-            address=40229 + 7,  # WMaxLim_Ena offset (already confirmed)
-            payload=[value],
-        )
+        """Compatibility alias for active-power limit enablement."""
+        await self.set_pv_limit_enabled(enabled)

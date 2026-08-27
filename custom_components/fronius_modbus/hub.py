@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+from functools import wraps
 from datetime import timedelta
 from typing import Optional
 from importlib.metadata import version, PackageNotFoundError
@@ -37,24 +39,16 @@ class Hub:
         self._unsub_interval_method = None
         self._entities = []
         self._entities_dict = {}
-        self._busy = False
+        self._operation_lock = asyncio.Lock()
 
     def toggle_busy(func):
+        @wraps(func)
         async def wrapper(self, *args, **kwargs):
-            if self._busy:
-                #_LOGGER.debug(f"skip {func.__name__} hub busy") 
-                return
-            self._busy = True
-            error = None
-            try:
-                result = await func(self, *args, **kwargs)
-            except Exception as e:
-                _LOGGER.warning(f'Exception in wrapper {e}')
-                error = e
-            self._busy = False
-            if not error is None:
-                raise error
-            return result
+            # A control command must wait for an in-progress poll instead of
+            # being silently discarded. asyncio.Lock also releases safely if
+            # the operation raises or is cancelled.
+            async with self._operation_lock:
+                return await func(self, *args, **kwargs)
         return wrapper
 
     @toggle_busy
@@ -79,10 +73,7 @@ class Hub:
             raise Exception(
                 f"pymodbus {installed} found, please update to {self.PYMODBUS_VERSION} or higher"
             )
-        if installed > required:
-            _LOGGER.warning(f"newer pymodbus {installed} found")
-
-        _LOGGER.debug(f"pymodbus {installed}")
+        _LOGGER.debug("pymodbus %s", installed)
 
     @property 
     def device_info_storage(self) -> dict:
@@ -143,63 +134,87 @@ class Hub:
             self._unsub_interval_method = None
             self.close()
 
-    @toggle_busy
     async def async_refresh_modbus_data(self, _now: Optional[int] = None) -> dict:
         """Time to update."""
+
+        # Timer callbacks should not build a backlog while a control write or a
+        # previous slow poll owns the Modbus connection. User-initiated control
+        # writes still wait on the lock and are never silently discarded.
+        if self._operation_lock.locked():
+            _LOGGER.debug("Skipping scheduled refresh while Modbus is busy")
+            return False
+
+        async with self._operation_lock:
+            return await self._async_refresh_modbus_data()
+
+    async def _async_refresh_modbus_data(self) -> bool:
+        """Read all configured models while holding the operation lock."""
 
         if not self._entities:
             return False
 
+        update_results = []
+
         try:
-            update_result = await self._client.read_inverter_data()
+            inverter_result = await self._client.read_inverter_data()
+            update_results.append(inverter_result)
+            self.online = bool(inverter_result)
         except Exception as e:
             _LOGGER.exception("Error reading inverter data", exc_info=True)
-            update_result = False
+            update_results.append(False)
+            self.online = False
 
         try:
-            update_result = await self._client.read_inverter_status_data()
+            update_results.append(await self._client.read_inverter_status_data())
         except Exception as e:
             _LOGGER.exception("Error reading inverter status data", exc_info=True)
-            update_result = False
+            update_results.append(False)
 
         try:
-            update_result = await self._client.read_inverter_model_settings_data()
+            update_results.append(await self._client.read_inverter_model_settings_data())
         except Exception as e:
             _LOGGER.exception("Error reading inverter model settings data", exc_info=True)
-            update_result = False
+            update_results.append(False)
 
         try:
-            update_result = await self._client.read_inverter_controls_data()
+            update_results.append(await self._client.read_inverter_controls_data())
         except Exception as e:
             _LOGGER.exception("Error reading inverter model settings data", exc_info=True)
-            update_result = False
+            update_results.append(False)
 
         if self._client.meter_configured:
-            for meter_address in self._client._meter_unit_ids:
+            for meter_index, meter_address in enumerate(self._client._meter_unit_ids, start=1):
                 try:
-                    update_result = await self._client.read_meter_data(meter_prefix="m1_", unit_id=meter_address)
+                    update_results.append(
+                        await self._client.read_meter_data(
+                            meter_prefix=f"m{meter_index}_", unit_id=meter_address
+                        )
+                    )
                 except Exception as e:
                     _LOGGER.error(f"Error reading meter data {meter_address}.", exc_info=True)
-                    #update_result = False
+                    update_results.append(False)
 
         if self._client.mppt_configured:
             try:
-                update_result = await self._client.read_mppt_data()
+                update_results.append(await self._client.read_mppt_data())
             except Exception as e:
                 _LOGGER.exception("Error reading mptt data", exc_info=True)
-                update_result = False
+                update_results.append(False)
         
         if self._client.storage_configured:
             try:
-                update_result = await self._client.read_inverter_storage_data()
+                update_results.append(await self._client.read_inverter_storage_data())
             except Exception as e:
                 _LOGGER.exception("Error reading inverter storage data", exc_info=True)
-                update_result = False
+                update_results.append(False)
 
 
-        if update_result:
-            for update_callback in self._entities:
-                update_callback()
+        # Always notify entities so availability and successful partial reads
+        # are reflected even if one optional model failed.
+        for update_callback in self._entities:
+            update_callback()
+
+        return any(update_results)
 
     @toggle_busy
     async def test_connection(self) -> bool:
@@ -238,6 +253,18 @@ class Hub:
     @property
     def storage_extended_control_mode(self):
         return self._client.storage_extended_control_mode
+
+    @property
+    def pv_control_configured(self) -> bool:
+        """Return whether the inverter exposed a usable power-limit block."""
+        max_power = self.data.get("max_power")
+        return (
+            isinstance(max_power, (int, float))
+            and not isinstance(max_power, bool)
+            and max_power > 0
+            and isinstance(self.data.get("WMaxLimPct"), (int, float))
+            and self.data.get("WMaxLim_Ena") in ("Disabled", "Enabled")
+        )
 
     @toggle_busy
     async def set_mode(self, mode):
@@ -280,4 +307,25 @@ class Hub:
     async def set_grid_discharge_power(self, value):
         await self._client.set_grid_discharge_power(value)
 
+    @toggle_busy
+    async def set_pv_output_limit_w(self, value):
+        """Set the inverter output ceiling in watts."""
+        await self._client.set_pv_output_limit_w(value)
+        self._notify_entities()
 
+    @toggle_busy
+    async def set_pv_limit_pct(self, value):
+        """Set the native SunSpec WMaxLimPct output ceiling."""
+        await self._client.set_pv_limit_pct(value)
+        self._notify_entities()
+
+    @toggle_busy
+    async def set_pv_limit_enabled(self, enabled: bool):
+        """Enable a configured output ceiling or return to automatic output."""
+        await self._client.set_pv_limit_enabled(enabled)
+        self._notify_entities()
+
+    def _notify_entities(self):
+        """Push locally verified control state to all entities."""
+        for update_callback in self._entities:
+            update_callback()

@@ -12,10 +12,12 @@ MINIMUM_RESERVE_ADDRESS = 40350
 DISCHARGE_RATE_ADDRESS = 40355
 CHARGE_RATE_ADDRESS = 40356
 
-# SunSpec / Fronius inverter controls (active power limiting)
+# SunSpec Model 123 immediate controls for the int+SF model. The model starts
+# at 40227 (ID and length); its first data point is at 40229.
+IMMEDIATE_CONTROL_DATA_ADDRESS = 40229
+WMAX_LIM_PCT_ADDRESS = 40232     # WMaxLimPct (uint16, scale factor -2)
 WMAX_LIM_ENA_ADDRESS = 40236     # WMaxLim_Ena (uint16)
-WMAX_LIM_PCT_ADDRESS = 40237     # WMaxLimPct (uint16, scaled x100)
-CONN_CONTROL_ADDRESS = 40231     # Conn (SunSpec inverter control)
+CONN_CONTROL_ADDRESS = 40231     # Conn: 0=standby, 1=grid feed operation
 
 
     # Manufacturer

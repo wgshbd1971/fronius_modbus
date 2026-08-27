@@ -71,15 +71,16 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         _LOGGER.error(f"Modbus addresses are not unique {all_addresses}")
         raise AddressesNotUnique
 
+    hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_INVERTER_UNIT_ID], meter_addresses, data[CONF_SCAN_INTERVAL])
     try:
-        hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_INVERTER_UNIT_ID], meter_addresses, data[CONF_SCAN_INTERVAL])
-
         await hub.init_data()
     except Exception as e:
         # If there is an error, raise an exception to notify HA that there was a
         # problem. The UI will also show there was a problem
         _LOGGER.error(f"Cannot start hub {e}")
         raise CannotConnect
+    finally:
+        hub.close()
 
     manufacturer = hub.data.get('i_manufacturer')
     if manufacturer is None:
