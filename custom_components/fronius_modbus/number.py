@@ -23,19 +23,33 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     entities = []
 
     if hub.pv_control_configured:
-        entities.append(
-            FroniusModbusNumber(
-                ENTITY_PREFIX,
-                hub,
-                hub.device_info_inverter,
-                "Solar output limit",
-                "pv_output_limit_w",
-                min=0,
-                max=hub.data["max_power"],
-                unit="W",
-                mode="box",
-                native_step=10,
-            )
+        entities.extend(
+            [
+                FroniusModbusNumber(
+                    ENTITY_PREFIX,
+                    hub,
+                    hub.device_info_inverter,
+                    "Solar output limit percentage",
+                    "WMaxLimPct",
+                    min=0,
+                    max=100,
+                    unit="%",
+                    mode="box",
+                    native_step=0.01,
+                ),
+                FroniusModbusNumber(
+                    ENTITY_PREFIX,
+                    hub,
+                    hub.device_info_inverter,
+                    "Solar output limit",
+                    "pv_output_limit_w",
+                    min=0,
+                    max=hub.data["max_power"],
+                    unit="W",
+                    mode="box",
+                    native_step=10,
+                ),
+            ]
         )
     else:
         _LOGGER.warning(
@@ -114,6 +128,8 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
             await self._hub.set_grid_discharge_power(value)
         elif self._key == 'pv_output_limit_w':
             await self._hub.set_pv_output_limit_w(value)
+        elif self._key == 'WMaxLimPct':
+            await self._hub.set_pv_limit_pct(value)
 
         #_LOGGER.debug(f"Number {self._key} set to {value}")
         self.async_write_ha_state()
@@ -125,7 +141,7 @@ class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
             return False
         if self._key == 'minimum_reserve':
             return True
-        if self._key == 'pv_output_limit_w':
+        if self._key in ('pv_output_limit_w', 'WMaxLimPct'):
             return self._hub.pv_control_configured
         if self._key == 'charge_limit' and self._hub.storage_extended_control_mode in [1,3,6]:
             return True

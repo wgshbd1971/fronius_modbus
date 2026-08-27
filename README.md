@@ -109,14 +109,15 @@ The integration creates Home Assistant devices for the inverter, configured smar
 
 ## Solar-output controls
 
-Two manual controls are created on the inverter device:
+Three manual controls are created on the inverter device:
 
 | Entity | Options/range | Description |
 | --- | --- | --- |
 | Solar output control | `Auto`, `Limited` | `Auto` disables the SunSpec active-power ceiling. `Limited` applies the configured ceiling. |
-| Solar output limit | `0` W to detected inverter maximum, step `10` W | Active-power ceiling for the inverter. The integration converts watts to the SunSpec percentage value and verifies every write by reading it back. |
+| Solar output limit percentage | `0`% to `100`%, step `0.01`% | Direct control of SunSpec Model 123 `WMaxLimPct`. The percentage is relative to the inverter's nominal power. |
+| Solar output limit | `0` W to detected inverter maximum, step `10` W | Convenience wrapper for the same active-power ceiling. The integration converts watts to `WMaxLimPct`. |
 
-Set **Solar output limit** before selecting **Limited**. Select **Auto** to remove the ceiling and return output control to the inverter. The limit applies to inverter AC output; it is not a closed-loop grid-export limit. Battery charging and site load can therefore affect the grid-meter reading.
+Set either output-limit entity before selecting **Limited**. Both entities control the same register and therefore remain synchronized. For a 10 kW inverter, `10`% is 1000 W, `1`% is 100 W, and `0`% is 0 W. Select **Auto** to remove the ceiling and return output control to the inverter. The limit applies to inverter AC output; it is not a closed-loop grid-export limit. Battery charging and site load can therefore affect the grid-meter reading.
 
 GEN24 output changes are ramped rather than instantaneous. Allow roughly 90–100 seconds before deciding that a new ceiling has not taken effect. Another active controller, such as Solar.web/Amber cloud control or a higher-priority local rule, can override the Modbus command; Modbus must be allowed in the inverter settings and placed at the intended control priority.
 

@@ -314,6 +314,12 @@ class Hub:
         self._notify_entities()
 
     @toggle_busy
+    async def set_pv_limit_pct(self, value):
+        """Set the native SunSpec WMaxLimPct output ceiling."""
+        await self._client.set_pv_limit_pct(value)
+        self._notify_entities()
+
+    @toggle_busy
     async def set_pv_limit_enabled(self, enabled: bool):
         """Enable a configured output ceiling or return to automatic output."""
         await self._client.set_pv_limit_enabled(enabled)

@@ -32,6 +32,7 @@ from .froniusmodbusclient_const import (
     GRID_STATUS,
 #    INVERTER_STATUS,
 #    CONNECTION_STATUS,
+    WMAX_LIM_ENA_ADDRESS,
     WMAX_LIM_PCT_ADDRESS,
     CONN_CONTROL_ADDRESS,
     IMMEDIATE_CONTROL_DATA_ADDRESS,
@@ -757,13 +758,14 @@ class FroniusModbusClient(ExtModbusClient):
         pct = self.data.get('WMaxLimPct', 100.0)
         raw_pct = self._pv_pct_to_raw(pct)
 
-        # Fronius recommends writing the complete five-register power-reduction
-        # block in one function-code 0x10 request. Re-writing Ena also applies a
-        # changed setpoint when the mode is already active.
+        # GEN24 applies this control reliably only when WMaxLimPct and
+        # WMaxLim_Ena arrive as distinct FC16 commands. A combined five-register
+        # write is acknowledged and reflected in Model 123 but does not curtail
+        # output on the tested firmware.
         await self.write_registers(
             unit_id=self._inverter_unit_id,
-            address=WMAX_LIM_PCT_ADDRESS,
-            payload=[raw_pct, 0, 0, 0, 1 if enabled else 0],
+            address=WMAX_LIM_ENA_ADDRESS,
+            payload=[1 if enabled else 0],
         )
         await self._verify_pv_limit(raw_pct, enabled)
 
@@ -774,17 +776,30 @@ class FroniusModbusClient(ExtModbusClient):
         pct = max(0.0, min(100.0, pct))
         raw_pct = self._pv_pct_to_raw(pct)
         enabled = self.data.get('WMaxLim_Ena') == CONTROL_STATUS[1]
+
+        # Retrigger an active limit around the new setpoint. Keeping the
+        # operations separate, with a short gap, reproduces the sequence that
+        # physically curtailed the inverter during the live regression test.
         if enabled:
             await self.write_registers(
                 unit_id=self._inverter_unit_id,
-                address=WMAX_LIM_PCT_ADDRESS,
-                payload=[raw_pct, 0, 0, 0, 1],
+                address=WMAX_LIM_ENA_ADDRESS,
+                payload=[0],
             )
-        else:
+            await asyncio.sleep(1)
+
+        await self.write_registers(
+            unit_id=self._inverter_unit_id,
+            address=WMAX_LIM_PCT_ADDRESS,
+            payload=[raw_pct],
+        )
+        await asyncio.sleep(1)
+
+        if enabled:
             await self.write_registers(
                 unit_id=self._inverter_unit_id,
-                address=WMAX_LIM_PCT_ADDRESS,
-                payload=[raw_pct],
+                address=WMAX_LIM_ENA_ADDRESS,
+                payload=[1],
             )
         await self._verify_pv_limit(raw_pct, enabled)
 
