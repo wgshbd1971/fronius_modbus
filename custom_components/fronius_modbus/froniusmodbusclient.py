@@ -34,7 +34,6 @@ from .froniusmodbusclient_const import (
 #    CONNECTION_STATUS,
     WMAX_LIM_ENA_ADDRESS,
     WMAX_LIM_PCT_ADDRESS,
-    CONN_CONTROL_ADDRESS,
     IMMEDIATE_CONTROL_DATA_ADDRESS,
 )
 
@@ -856,12 +855,22 @@ class FroniusModbusClient(ExtModbusClient):
         return round(raw_pct * 10**self.wmax_limit_pct_sf, 2)
 
     async def set_inverter_control_enabled(self, enabled: bool):
-        """Put the inverter into grid-feed operation or standby."""
+        """Put the inverter into grid-feed operation or fail-safe standby."""
+        revert_seconds = 0 if enabled else 900
         await self.write_registers(
             unit_id=self._inverter_unit_id,
-            address=CONN_CONTROL_ADDRESS,
-            payload=[1 if enabled else 0],
+            address=IMMEDIATE_CONTROL_DATA_ADDRESS,
+            payload=[0, revert_seconds, 1 if enabled else 0],
         )
+        await asyncio.sleep(0.2)
+        if not await self.read_inverter_controls_data():
+            raise RuntimeError("Unable to verify inverter connection control")
+        expected = CONTROL_STATUS[1 if enabled else 0]
+        if self.data.get('Conn') != expected:
+            raise RuntimeError(
+                "Inverter connection control verification failed: "
+                f"expected {expected}, received {self.data.get('Conn')}"
+            )
 
     async def set_active_power_control_enabled(self, enabled: bool):
         """Compatibility alias for active-power limit enablement."""

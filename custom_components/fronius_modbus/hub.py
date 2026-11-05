@@ -266,6 +266,11 @@ class Hub:
             and self.data.get("WMaxLim_Ena") in ("Disabled", "Enabled")
         )
 
+    @property
+    def inverter_connection_control_configured(self) -> bool:
+        """Return whether the inverter exposed connection control."""
+        return self.data.get("Conn") in ("Disabled", "Enabled")
+
     @toggle_busy
     async def set_mode(self, mode):
         if mode == 0:
@@ -323,6 +328,12 @@ class Hub:
     async def set_pv_limit_enabled(self, enabled: bool):
         """Enable a configured output ceiling or return to automatic output."""
         await self._client.set_pv_limit_enabled(enabled)
+        self._notify_entities()
+
+    @toggle_busy
+    async def set_inverter_control_enabled(self, enabled: bool):
+        """Connect the inverter or place it in fail-safe standby."""
+        await self._client.set_inverter_control_enabled(enabled)
         self._notify_entities()
 
     def _notify_entities(self):
