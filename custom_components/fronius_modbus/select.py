@@ -18,6 +18,30 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
 
     entities = []
 
+    if hub.pv_control_configured:
+        entities.append(
+            FroniusModbusSolarOutputSelect(
+                platform_name=ENTITY_PREFIX,
+                hub=hub,
+                device_info=hub.device_info_inverter,
+                name="Solar output control",
+                key="pv_output_control",
+                options={0: "Auto", 1: "Limited"},
+            )
+        )
+
+    if hub.inverter_connection_control_configured:
+        entities.append(
+            FroniusModbusConnectionSelect(
+                platform_name=ENTITY_PREFIX,
+                hub=hub,
+                device_info=hub.device_info_inverter,
+                name="Inverter connection control",
+                key="inverter_connection_control",
+                options={0: "Standby", 1: "Connected"},
+            )
+        )
+
     if hub.storage_configured:
         for select_info in STORAGE_SELECT_TYPES:
             select = FroniusModbusSelect(
@@ -59,4 +83,52 @@ class FroniusModbusSelect(FroniusModbusBaseEntity, SelectEntity):
         # self._hub.storage_extended_control_mode = new_mode
         self.async_write_ha_state()
 
+
+class FroniusModbusSolarOutputSelect(FroniusModbusBaseEntity, SelectEntity):
+    """Manual active-power limiting mode."""
+
+    @property
+    def current_option(self) -> str:
+        enabled = self._hub.data.get("WMaxLim_Ena")
+        if enabled == "Enabled":
+            return "Limited"
+        if enabled == "Disabled":
+            return "Auto"
+        return None
+
+    @property
+    def available(self) -> bool:
+        return self._hub.online and self._hub.pv_control_configured
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._attr_options:
+            raise ValueError(f"Unsupported solar output mode: {option}")
+        await self._hub.set_pv_limit_enabled(option == "Limited")
+        self.async_write_ha_state()
+
+
+class FroniusModbusConnectionSelect(FroniusModbusBaseEntity, SelectEntity):
+    """Inverter grid-feed connection control."""
+
+    @property
+    def current_option(self) -> str:
+        connection = self._hub.data.get("Conn")
+        if connection == "Enabled":
+            return "Connected"
+        if connection == "Disabled":
+            return "Standby"
+        return None
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._hub.online
+            and self._hub.inverter_connection_control_configured
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._attr_options:
+            raise ValueError(f"Unsupported inverter connection mode: {option}")
+        await self._hub.set_inverter_control_enabled(option == "Connected")
+        self.async_write_ha_state()
 

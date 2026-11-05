@@ -11,4 +11,6 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v3"
+      - name: Compile integration Python
+        run: python -m compileall -q custom_components/fronius_modbus
       - uses: home-assistant/actions/hassfest@master
