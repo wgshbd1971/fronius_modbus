@@ -27,19 +27,20 @@
     "options": {
         "step": {
             "init": {
-                "title": "Set up Fronius System",
-                "description": "Set options for your Fronius System.",
+                "title": "Native export control",
+                "description": "Configure the local inverter Technician credential used only for native Smart Meter-following export limits.",
                 "data": {
-                    "ip_address": "IP Address",
-                    "port": "Port",
-                    "scan_interval": "Scan Interval in Seconds",
-                    "inverter_modbus_unit_id": "Inverter Modbus Unit/Slave ID",
-                    "meter_modbus_unit_id": "Meter Modbus Unit/Slave ID"
+                    "username": "Local inverter REST username",
+                    "password": "Local inverter REST password (leave blank to keep the current password)"
                 }
             }
         },
         "error": {
-            "scan_interval_too_short": "Scan interval is too short. Minimum 10 seconds."
+            "cannot_connect": "Could not read the inverter's native export-limit configuration",
+            "invalid_auth": "The local inverter REST username or password is invalid",
+            "export_control_not_enabled": "Enable Power Control and the Soft Export Limit in the inverter before continuing",
+            "required": "A password is required",
+            "unknown": "An unexpected error occurred"
         }
     }
   }

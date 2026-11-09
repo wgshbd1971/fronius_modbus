@@ -42,6 +42,18 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
             )
         )
 
+    if hub.rest_export_control_configured:
+        entities.append(
+            FroniusRestExportSelect(
+                platform_name=ENTITY_PREFIX,
+                hub=hub,
+                device_info=hub.device_info_inverter,
+                name="Grid export control",
+                key="grid_export_control",
+                options={0: "Zero export", 1: "Normal export"},
+            )
+        )
+
     if hub.storage_configured:
         for select_info in STORAGE_SELECT_TYPES:
             select = FroniusModbusSelect(
@@ -130,5 +142,26 @@ class FroniusModbusConnectionSelect(FroniusModbusBaseEntity, SelectEntity):
         if option not in self._attr_options:
             raise ValueError(f"Unsupported inverter connection mode: {option}")
         await self._hub.set_inverter_control_enabled(option == "Connected")
+        self.async_write_ha_state()
+
+
+class FroniusRestExportSelect(FroniusModbusBaseEntity, SelectEntity):
+    """Native Smart Meter-following feed-in limit."""
+
+    @property
+    def current_option(self) -> str:
+        limit = self._hub.data.get("rest_export_limit_w")
+        if limit is None:
+            return None
+        return "Zero export" if limit <= 0 else "Normal export"
+
+    @property
+    def available(self) -> bool:
+        return self._hub.online and self._hub.rest_export_control_configured
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._attr_options:
+            raise ValueError(f"Unsupported grid export mode: {option}")
+        await self._hub.set_zero_export_enabled(option == "Zero export")
         self.async_write_ha_state()
 

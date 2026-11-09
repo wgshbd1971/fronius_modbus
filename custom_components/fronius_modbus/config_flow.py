@@ -6,10 +6,24 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries, exceptions
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .hub import Hub
-from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
+from .froniusrestclient import (
+    FroniusRestAuthenticationError,
+    FroniusRestClient,
+    FroniusRestError,
+)
+from homeassistant.const import (
+    CONF_NAME,
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
 from .const import (
     DOMAIN,
     DEFAULT_NAME,
@@ -17,6 +31,7 @@ from .const import (
     DEFAULT_PORT,
     DEFAULT_INVERTER_UNIT_ID,
     DEFAULT_METER_UNIT_ID,
+    DEFAULT_REST_USERNAME,
     CONF_INVERTER_UNIT_ID,
     CONF_METER_UNIT_ID,
     SUPPORTED_MANUFACTURERS,
@@ -124,6 +139,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # changes.
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Return the options flow for authenticated REST control."""
+        return FroniusOptionsFlow()
+
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         # This goes through the steps to take the user through the setup process.
@@ -176,3 +197,61 @@ class AddressesNotUnique(exceptions.HomeAssistantError):
 
 class ScanIntervalTooShort(exceptions.HomeAssistantError):
     """Error to indicate the scan interval is too short."""    
+
+
+class FroniusOptionsFlow(config_entries.OptionsFlow):
+    """Configure optional authenticated GEN24 REST control."""
+
+    async def async_step_init(self, user_input=None):
+        errors = {}
+        existing_username = self.config_entry.options.get(
+            CONF_USERNAME, DEFAULT_REST_USERNAME
+        )
+        existing_password = self.config_entry.options.get(CONF_PASSWORD)
+
+        if user_input is not None:
+            username = user_input.get(CONF_USERNAME, existing_username)
+            password = user_input.get(CONF_PASSWORD) or existing_password
+            if not password:
+                errors[CONF_PASSWORD] = "required"
+            else:
+                try:
+                    client = FroniusRestClient(
+                        async_get_clientsession(self.hass),
+                        self.config_entry.data[CONF_HOST],
+                        username,
+                        password,
+                    )
+                    config = await client.async_get_power_limits()
+                    active_power = config["exportLimits"]["activePower"]
+                    if not (
+                        active_power.get("activated")
+                        and active_power.get("softLimit", {}).get("enabled")
+                    ):
+                        errors["base"] = "export_control_not_enabled"
+                    else:
+                        return self.async_create_entry(
+                            title="",
+                            data={CONF_USERNAME: username, CONF_PASSWORD: password},
+                        )
+                except FroniusRestAuthenticationError:
+                    errors["base"] = "invalid_auth"
+                except (FroniusRestError, KeyError):
+                    errors["base"] = "cannot_connect"
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected REST options error")
+                    errors["base"] = "unknown"
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=existing_username): str,
+                vol.Optional(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors
+        )

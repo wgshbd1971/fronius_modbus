@@ -65,6 +65,19 @@ Enable Modbus TCP in the Fronius inverter web interface:
 | Meter Modbus Unit/Slave ID | `200` | Must be different from the inverter unit ID. |
 | Scan interval | `10` seconds | Setup rejects intervals below `5` seconds. |
 
+The integration's **Configure** dialog also accepts the inverter's local
+technician username and password. When supplied, it validates the native
+Fronius soft export limiter and adds a **Grid export control** select. **Zero
+export** sets the inverter's Smart Meter-following export limit to `0 W`;
+**Normal export** restores the positive limit that was active when Home
+Assistant loaded the integration. This control uses the inverter's local REST
+configuration API because the SunSpec `WMaxLimPct` register limits total
+inverter output rather than grid export.
+
+The local REST API is firmware-private and may change in future Fronius
+firmware. Home Assistant stores the supplied credential in the integration's
+config-entry options.
+
 ## Devices and entities
 
 The integration creates Home Assistant devices for the inverter, configured smart meter, and battery storage when the relevant data is detected.

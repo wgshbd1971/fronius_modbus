@@ -12,8 +12,10 @@ from packaging.version import Version
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import HomeAssistant
+from aiohttp import ClientSession
 
 from .froniusmodbusclient import FroniusModbusClient
+from .froniusrestclient import FroniusRestClient
 
 from .const import (
     DOMAIN,
@@ -26,7 +28,19 @@ class Hub:
 
     PYMODBUS_VERSION = '3.9.2'
 
-    def __init__(self, hass: HomeAssistant, name: str, host: str, port: int, inverter_unit_id: int, meter_unit_ids, scan_interval: int) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        name: str,
+        host: str,
+        port: int,
+        inverter_unit_id: int,
+        meter_unit_ids,
+        scan_interval: int,
+        rest_session: ClientSession | None = None,
+        rest_username: str | None = None,
+        rest_password: str | None = None,
+    ) -> None:
         """Init hub."""
         self._hass = hass
         self._name = name
@@ -35,6 +49,12 @@ class Hub:
         self.online = True        
 
         self._client = FroniusModbusClient(host=host, port=port, inverter_unit_id=inverter_unit_id, meter_unit_ids=meter_unit_ids, timeout=max(3, (scan_interval - 1)))
+        self._rest_client = (
+            FroniusRestClient(rest_session, host, rest_username, rest_password)
+            if rest_session is not None and rest_username and rest_password
+            else None
+        )
+        self._normal_export_limit_w = None
         self._scan_interval = timedelta(seconds=scan_interval)
         self._unsub_interval_method = None
         self._entities = []
@@ -58,6 +78,12 @@ class Hub:
 
         if self.storage_configured:
             result : bool = await self._hass.async_add_executor_job(self._client.get_json_storage_info)                
+
+        if self._rest_client is not None:
+            try:
+                await self._refresh_rest_export_limit()
+            except Exception:
+                _LOGGER.exception("Unable to initialize native export-limit control")
 
         return
 
@@ -271,6 +297,34 @@ class Hub:
         """Return whether the inverter exposed connection control."""
         return self.data.get("Conn") in ("Disabled", "Enabled")
 
+    @property
+    def rest_export_control_configured(self) -> bool:
+        """Return whether authenticated native export-limit control is usable."""
+        return bool(
+            self._rest_client is not None
+            and self.data.get("rest_export_active") is True
+            and self.data.get("rest_export_soft_enabled") is True
+            and isinstance(self._normal_export_limit_w, (int, float))
+            and self._normal_export_limit_w > 0
+        )
+
+    async def _refresh_rest_export_limit(self):
+        """Refresh native feed-in-limit state from the local REST API."""
+        config = await self._rest_client.async_get_power_limits()
+        active_power = config["exportLimits"]["activePower"]
+        soft_limit = active_power["softLimit"]
+        current_limit = int(soft_limit["powerLimit"])
+        reference = int(config["visualization"]["wattPeakReferenceValue"])
+        self.data["rest_export_active"] = bool(active_power["activated"])
+        self.data["rest_export_soft_enabled"] = bool(soft_limit["enabled"])
+        self.data["rest_export_limit_w"] = current_limit
+        if current_limit > 0:
+            self._normal_export_limit_w = current_limit
+        elif self._normal_export_limit_w is None and reference > 0:
+            self._normal_export_limit_w = reference
+        self.data["rest_export_normal_limit_w"] = self._normal_export_limit_w
+        return config
+
     @toggle_busy
     async def set_mode(self, mode):
         if mode == 0:
@@ -334,6 +388,23 @@ class Hub:
     async def set_inverter_control_enabled(self, enabled: bool):
         """Connect the inverter or place it in fail-safe standby."""
         await self._client.set_inverter_control_enabled(enabled)
+        self._notify_entities()
+
+    @toggle_busy
+    async def set_zero_export_enabled(self, enabled: bool):
+        """Switch native Smart Meter-following zero export on or off."""
+        if not self.rest_export_control_configured:
+            raise RuntimeError("Native REST export-limit control is unavailable")
+        target = 0 if enabled else int(self._normal_export_limit_w)
+        config = await self._rest_client.async_set_soft_export_limit(target)
+        active_power = config["exportLimits"]["activePower"]
+        self.data["rest_export_active"] = bool(active_power["activated"])
+        self.data["rest_export_soft_enabled"] = bool(
+            active_power["softLimit"]["enabled"]
+        )
+        self.data["rest_export_limit_w"] = int(
+            active_power["softLimit"]["powerLimit"]
+        )
         self._notify_entities()
 
     def _notify_entities(self):
