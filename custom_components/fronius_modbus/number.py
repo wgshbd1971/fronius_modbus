@@ -1,13 +1,10 @@
 import logging
-from typing import Optional, Dict, Any
 
 from .const import (
     STORAGE_NUMBER_TYPES,
     ENTITY_PREFIX,
 )
 
-from homeassistant.core import callback
-from homeassistant.const import CONF_NAME
 from homeassistant.components.number import (
     NumberEntity,
 )
@@ -83,8 +80,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
             entities.append(number)
 
     async_add_entities(entities)
-    return True
-
 class FroniusModbusNumber(FroniusModbusBaseEntity, NumberEntity):
     """Representation of a Battery Storage Modbus number."""
 

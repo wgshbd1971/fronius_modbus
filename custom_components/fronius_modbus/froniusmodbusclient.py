@@ -1,10 +1,7 @@
-#import os, sys; sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-
 """BYD Battery Box Class"""
 
 import asyncio
 import logging
-from typing import Optional, Literal
 from .extmodbusclient import ExtModbusClient
 import requests
 

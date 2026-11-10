@@ -12,16 +12,17 @@ from packaging.version import Version
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.core import HomeAssistant
-from aiohttp import ClientSession
+from aiohttp import ClientError, ClientSession
 
 from .froniusmodbusclient import FroniusModbusClient
-from .froniusrestclient import FroniusRestClient
+from .froniusrestclient import FroniusRestClient, FroniusRestError
 
 from .const import (
     DOMAIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
+REST_REFRESH_INTERVAL_SECONDS = 60
 
 class Hub:
     """Hub for Fronius Battery Storage Modbus Interface"""
@@ -56,9 +57,9 @@ class Hub:
         )
         self._normal_export_limit_w = None
         self._scan_interval = timedelta(seconds=scan_interval)
+        self._next_rest_refresh = 0.0
         self._unsub_interval_method = None
         self._entities = []
-        self._entities_dict = {}
         self._operation_lock = asyncio.Lock()
 
     def toggle_busy(func):
@@ -72,24 +73,15 @@ class Hub:
         return wrapper
 
     @toggle_busy
-    async def init_data(self, close = False, read_status_data = False):
+    async def init_data(self):
         await self._hass.async_add_executor_job(self.check_pymodbus_version)  
-        result = await self._client.init_data()
+        await self._client.init_data()
 
         if self.storage_configured:
-            result : bool = await self._hass.async_add_executor_job(self._client.get_json_storage_info)                
+            await self._hass.async_add_executor_job(self._client.get_json_storage_info)
 
         if self._rest_client is not None:
-            try:
-                await self._refresh_rest_export_limit()
-            except Exception:
-                _LOGGER.exception("Unable to initialize native export-limit control")
-            try:
-                await self._refresh_rest_remote_control()
-            except Exception:
-                _LOGGER.exception("Unable to initialize Solar.web remote control")
-
-        return
+            await self._async_refresh_rest_data(force=True)
 
     def check_pymodbus_version(self):
         try:
@@ -164,7 +156,7 @@ class Hub:
             self._unsub_interval_method = None
             self.close()
 
-    async def async_refresh_modbus_data(self, _now: Optional[int] = None) -> dict:
+    async def async_refresh_modbus_data(self, _now: Optional[int] = None) -> bool:
         """Time to update."""
 
         # Timer callbacks should not build a backlog while a control write or a
@@ -175,7 +167,9 @@ class Hub:
             return False
 
         async with self._operation_lock:
-            return await self._async_refresh_modbus_data()
+            result = await self._async_refresh_modbus_data()
+        await self._async_refresh_rest_data()
+        return result
 
     async def _async_refresh_modbus_data(self) -> bool:
         """Read all configured models while holding the operation lock."""
@@ -245,6 +239,39 @@ class Hub:
             update_callback()
 
         return any(update_results)
+
+    async def _async_refresh_rest_data(self, force: bool = False) -> None:
+        """Refresh local REST control state without polling it every scan."""
+        if self._rest_client is None:
+            return
+        now = asyncio.get_running_loop().time()
+        if not force and now < self._next_rest_refresh:
+            return
+        self._next_rest_refresh = now + REST_REFRESH_INTERVAL_SECONDS
+
+        changed = False
+        try:
+            await self._refresh_rest_export_limit()
+            changed = True
+        except (FroniusRestError, ClientError, TimeoutError) as err:
+            _LOGGER.warning("Unable to refresh native export-limit control: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Invalid native export-limit response")
+        except Exception:  # Defensive boundary around a firmware-private API.
+            _LOGGER.exception("Unexpected native export-limit refresh error")
+
+        try:
+            await self._refresh_rest_remote_control()
+            changed = True
+        except (FroniusRestError, ClientError, TimeoutError) as err:
+            _LOGGER.warning("Unable to refresh Solar.web remote control: %s", err)
+        except (KeyError, TypeError, ValueError):
+            _LOGGER.exception("Invalid Solar.web remote-control response")
+        except Exception:  # Defensive boundary around a firmware-private API.
+            _LOGGER.exception("Unexpected Solar.web remote-control refresh error")
+
+        if changed and self._entities:
+            self._notify_entities()
 
     @toggle_busy
     async def test_connection(self) -> bool:

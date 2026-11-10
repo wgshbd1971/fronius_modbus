@@ -9,7 +9,7 @@ import re
 import secrets
 from typing import Any
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ LOGIN_PATH = "/api/commands/Login"
 COMMON_STATUS_PATH = "/api/status/common"
 POWER_LIMITS_PATH = "/api/config/limit_settings/powerLimits"
 SOLARWEB_PATH = "/api/config/solarweb"
+REST_TIMEOUT = ClientTimeout(total=10)
 
 
 class FroniusRestError(RuntimeError):
@@ -91,7 +92,7 @@ class FroniusRestClient:
 
     async def _authenticate(self) -> None:
         async with self._session.get(
-            f"{self._base_url}{COMMON_STATUS_PATH}"
+            f"{self._base_url}{COMMON_STATUS_PATH}", timeout=REST_TIMEOUT
         ) as response:
             response.raise_for_status()
             common = await response.json()
@@ -103,7 +104,9 @@ class FroniusRestClient:
         password_hash_algorithm = "md5" if version == 1 else "sha256"
 
         async with self._session.get(
-            f"{self._base_url}{LOGIN_PATH}", params={"user": self._username}
+            f"{self._base_url}{LOGIN_PATH}",
+            params={"user": self._username},
+            timeout=REST_TIMEOUT,
         ) as response:
             challenge_header = response.headers.get("X-WWW-Authenticate")
             if response.status != 401 or challenge_header is None:
@@ -121,6 +124,7 @@ class FroniusRestClient:
             f"{self._base_url}{LOGIN_PATH}",
             params={"user": self._username},
             headers={"Authorization": self._authorization("GET", LOGIN_PATH)},
+            timeout=REST_TIMEOUT,
         ) as response:
             if response.status != 200:
                 raise FroniusRestAuthenticationError(
@@ -139,6 +143,7 @@ class FroniusRestClient:
                     f"{self._base_url}{path}",
                     headers={"Authorization": self._authorization(method, path)},
                     json=payload,
+                    timeout=REST_TIMEOUT,
                 ) as response:
                     if response.status == 401 and attempt == 0:
                         self._challenge = None

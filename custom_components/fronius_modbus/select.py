@@ -1,5 +1,3 @@
-import logging
-
 from .const import (
     STORAGE_SELECT_TYPES,
     ENTITY_PREFIX,
@@ -9,9 +7,6 @@ from homeassistant.components.select import SelectEntity
 
 from .hub import Hub
 from .base import FroniusModbusBaseEntity
-
-_LOGGER = logging.getLogger(__name__)
-
 
 async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     hub: Hub = config_entry.runtime_data
@@ -79,9 +74,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
             entities.append(select)
 
     async_add_entities(entities)
-    return True
-
-
 def get_key(my_dict, search):
     for k, v in my_dict.items():
         if v == search:

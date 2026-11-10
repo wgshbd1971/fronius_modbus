@@ -10,7 +10,7 @@ Unofficial Home Assistant custom integration for reading Fronius GEN24 inverter,
 ## Current state
 
 - Integration domain: `fronius_modbus`.
-- Current manifest version: `0.2.0`.
+- Current manifest version: `0.4.1`.
 - Home Assistant platforms: `sensor`, `number`, and `select`.
 - Connection type: local Modbus TCP polling.
 - Default port: `502`.
@@ -66,13 +66,13 @@ Enable Modbus TCP in the Fronius inverter web interface:
 | Scan interval | `10` seconds | Setup rejects intervals below `5` seconds. |
 
 The integration's **Configure** dialog also accepts the inverter's local
-technician username and password. When supplied, it validates the native
-Fronius soft export limiter and adds a **Grid export control** select. **Zero
-export** sets the inverter's Smart Meter-following export limit to `0 W`;
-**Normal export** restores the positive limit that was active when Home
-Assistant loaded the integration. This control uses the inverter's local REST
-configuration API because the SunSpec `WMaxLimPct` register limits total
-inverter output rather than grid export.
+technician username and password. When supplied, it validates the local REST
+control endpoints. A **Grid export control** select is added when the inverter's
+Power Control and Soft Export Limit settings are enabled. **Zero export** sets
+the inverter's Smart Meter-following export limit to `0 W`; **Normal export**
+restores the positive limit that was active before curtailment. This control
+uses the inverter's local REST configuration API because the SunSpec
+`WMaxLimPct` register limits total inverter output rather than grid export.
 
 The local REST API is firmware-private and may change in future Fronius
 firmware. Home Assistant stores the supplied credential in the integration's
@@ -84,6 +84,10 @@ control overrides local export limitation, so automations can temporarily
 disable this select before applying **Zero export**, then restore the normal
 limit before re-enabling remote control. Disabling it also pauses remote battery
 commands; Solar.web monitoring and data upload remain enabled.
+
+REST control state is refreshed once per minute, so changes made in the local
+inverter interface are reflected in Home Assistant without reloading the
+integration.
 
 ## Devices and entities
 
