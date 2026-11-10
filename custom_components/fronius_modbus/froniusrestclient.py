@@ -16,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 LOGIN_PATH = "/api/commands/Login"
 COMMON_STATUS_PATH = "/api/status/common"
 POWER_LIMITS_PATH = "/api/config/limit_settings/powerLimits"
+SOLARWEB_PATH = "/api/config/solarweb"
 
 
 class FroniusRestError(RuntimeError):
@@ -156,6 +157,41 @@ class FroniusRestClient:
     async def async_get_power_limits(self) -> dict[str, Any]:
         """Return the native feed-in-limit configuration."""
         return await self._request("GET", POWER_LIMITS_PATH)
+
+    async def async_get_remote_control(self) -> dict[str, Any]:
+        """Return the Solar.web remote-control configuration."""
+        return await self._request("GET", SOLARWEB_PATH)
+
+    async def async_set_remote_control_enabled(
+        self, enabled: bool
+    ) -> dict[str, Any]:
+        """Set and verify the Solar.web master and profile controls."""
+        payload = {
+            "enableRemoteControl": enabled,
+            "customerRemoteControlProfileActive": enabled,
+            "technicianRemoteControlProfileActive": enabled,
+        }
+        result = await self._request("POST", SOLARWEB_PATH, payload)
+        expected = set(payload)
+        failures = (
+            result.get("errors", [])
+            + result.get("permissionFailure", [])
+            + result.get("validationErrors", [])
+            + result.get("writeFailure", [])
+        )
+        if failures or not expected.issubset(result.get("writeSuccess", [])):
+            raise FroniusRestError(f"Remote-control write failed: {result}")
+
+        config = None
+        for _attempt in range(5):
+            await asyncio.sleep(1)
+            config = await self.async_get_remote_control()
+            if all(bool(config[key]) is enabled for key in payload):
+                return config
+        raise FroniusRestError(
+            f"Remote-control verification failed: expected {enabled}, got "
+            f"{config}"
+        )
 
     async def async_set_soft_export_limit(self, watts: int) -> dict[str, Any]:
         """Set and verify the native Smart Meter-following soft export limit."""

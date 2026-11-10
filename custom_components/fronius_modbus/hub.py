@@ -84,6 +84,10 @@ class Hub:
                 await self._refresh_rest_export_limit()
             except Exception:
                 _LOGGER.exception("Unable to initialize native export-limit control")
+            try:
+                await self._refresh_rest_remote_control()
+            except Exception:
+                _LOGGER.exception("Unable to initialize Solar.web remote control")
 
         return
 
@@ -325,6 +329,27 @@ class Hub:
         self.data["rest_export_normal_limit_w"] = self._normal_export_limit_w
         return config
 
+    @property
+    def rest_remote_control_configured(self) -> bool:
+        """Return whether Solar.web remote-control state is available."""
+        return self._rest_client is not None and isinstance(
+            self.data.get("rest_remote_control_enabled"), bool
+        )
+
+    async def _refresh_rest_remote_control(self):
+        """Refresh Solar.web remote-control state."""
+        config = await self._rest_client.async_get_remote_control()
+        self.data["rest_remote_control_enabled"] = bool(
+            config["enableRemoteControl"]
+        )
+        self.data["rest_remote_customer_profile"] = bool(
+            config["customerRemoteControlProfileActive"]
+        )
+        self.data["rest_remote_technician_profile"] = bool(
+            config["technicianRemoteControlProfileActive"]
+        )
+        return config
+
     @toggle_busy
     async def set_mode(self, mode):
         if mode == 0:
@@ -404,6 +429,23 @@ class Hub:
         )
         self.data["rest_export_limit_w"] = int(
             active_power["softLimit"]["powerLimit"]
+        )
+        self._notify_entities()
+
+    @toggle_busy
+    async def set_remote_control_enabled(self, enabled: bool):
+        """Enable or suspend Solar.web remote control and both profiles."""
+        if not self.rest_remote_control_configured:
+            raise RuntimeError("Solar.web remote control is unavailable")
+        config = await self._rest_client.async_set_remote_control_enabled(enabled)
+        self.data["rest_remote_control_enabled"] = bool(
+            config["enableRemoteControl"]
+        )
+        self.data["rest_remote_customer_profile"] = bool(
+            config["customerRemoteControlProfileActive"]
+        )
+        self.data["rest_remote_technician_profile"] = bool(
+            config["technicianRemoteControlProfileActive"]
         )
         self._notify_entities()
 

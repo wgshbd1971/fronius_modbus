@@ -54,6 +54,18 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
             )
         )
 
+    if hub.rest_remote_control_configured:
+        entities.append(
+            FroniusRestRemoteControlSelect(
+                platform_name=ENTITY_PREFIX,
+                hub=hub,
+                device_info=hub.device_info_inverter,
+                name="Solar.web remote control",
+                key="solarweb_remote_control",
+                options={0: "Disabled", 1: "Enabled"},
+            )
+        )
+
     if hub.storage_configured:
         for select_info in STORAGE_SELECT_TYPES:
             select = FroniusModbusSelect(
@@ -163,5 +175,26 @@ class FroniusRestExportSelect(FroniusModbusBaseEntity, SelectEntity):
         if option not in self._attr_options:
             raise ValueError(f"Unsupported grid export mode: {option}")
         await self._hub.set_zero_export_enabled(option == "Zero export")
+        self.async_write_ha_state()
+
+
+class FroniusRestRemoteControlSelect(FroniusModbusBaseEntity, SelectEntity):
+    """Solar.web remote-control master and profile state."""
+
+    @property
+    def current_option(self) -> str:
+        enabled = self._hub.data.get("rest_remote_control_enabled")
+        if enabled is None:
+            return None
+        return "Enabled" if enabled else "Disabled"
+
+    @property
+    def available(self) -> bool:
+        return self._hub.online and self._hub.rest_remote_control_configured
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in self._attr_options:
+            raise ValueError(f"Unsupported Solar.web remote mode: {option}")
+        await self._hub.set_remote_control_enabled(option == "Enabled")
         self.async_write_ha_state()
 

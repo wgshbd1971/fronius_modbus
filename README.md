@@ -78,6 +78,13 @@ The local REST API is firmware-private and may change in future Fronius
 firmware. Home Assistant stores the supplied credential in the integration's
 config-entry options.
 
+The **Solar.web remote control** select changes the inverter's remote-control
+master switch and its customer and technician profiles together. Fronius cloud
+control overrides local export limitation, so automations can temporarily
+disable this select before applying **Zero export**, then restore the normal
+limit before re-enabling remote control. Disabling it also pauses remote battery
+commands; Solar.web monitoring and data upload remain enabled.
+
 ## Devices and entities
 
 The integration creates Home Assistant devices for the inverter, configured smart meter, and battery storage when the relevant data is detected.
