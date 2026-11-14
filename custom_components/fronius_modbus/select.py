@@ -61,6 +61,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
             )
         )
 
+    if hub.rest_remote_control_configured:
+        entities.append(FroniusRestCustomerProfileSelect(
+            platform_name=ENTITY_PREFIX, hub=hub, device_info=hub.device_info_inverter,
+            name="Solar.web customer VPP control", key="solarweb_customer_vpp_control",
+            options={0: "Disabled", 1: "Enabled"}))
+
     if hub.storage_configured:
         for select_info in STORAGE_SELECT_TYPES:
             select = FroniusModbusSelect(
@@ -89,14 +95,20 @@ class FroniusModbusSelect(FroniusModbusBaseEntity, SelectEntity):
         if self._key in self._hub.data:
             return self._hub.data[self._key]
 
+    @property
+    def extra_state_attributes(self):
+        return {"raw_mode": self._hub.data.get("storage_mode_raw"),
+                "charge_rate_percent": self._hub.data.get("charging_power"),
+                "discharge_rate_percent": self._hub.data.get("discharging_power"),
+                "readback_unix": self._hub.data.get("storage_readback_unix")}
+
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         new_mode = get_key(self._options_dict, option)
 
         await self._hub.set_mode(new_mode)
 
-        self._hub.data[self._key] = option
-        # self._hub.storage_extended_control_mode = new_mode
+        # Observed state is published by the next verified storage poll.
         self.async_write_ha_state()
 
 
@@ -181,6 +193,12 @@ class FroniusRestRemoteControlSelect(FroniusModbusBaseEntity, SelectEntity):
         return "Enabled" if enabled else "Disabled"
 
     @property
+    def extra_state_attributes(self):
+        return {"customer_vpp_enabled": self._hub.data.get("rest_remote_customer_profile"),
+                "regulatory_profile_enabled": self._hub.data.get("rest_remote_technician_profile"),
+                "readback_unix": self._hub.data.get("rest_remote_readback_unix")}
+
+    @property
     def available(self) -> bool:
         return self._hub.online and self._hub.rest_remote_control_configured
 
@@ -190,3 +208,16 @@ class FroniusRestRemoteControlSelect(FroniusModbusBaseEntity, SelectEntity):
         await self._hub.set_remote_control_enabled(option == "Enabled")
         self.async_write_ha_state()
 
+
+
+class FroniusRestCustomerProfileSelect(FroniusRestRemoteControlSelect):
+    """Optional VPP ownership, independent of the cloud master/regulatory profile."""
+    @property
+    def current_option(self):
+        enabled=self._hub.data.get("rest_remote_customer_profile")
+        return None if enabled is None else "Enabled" if enabled else "Disabled"
+
+    async def async_select_option(self, option):
+        if option not in self._attr_options:raise ValueError("Unsupported customer profile mode")
+        await self._hub.set_customer_profile_enabled(option == "Enabled")
+        self.async_write_ha_state()

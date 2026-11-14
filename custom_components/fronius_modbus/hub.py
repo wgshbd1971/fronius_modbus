@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import time
 from functools import wraps
 from datetime import timedelta
 from typing import Optional
@@ -366,6 +367,7 @@ class Hub:
     async def _refresh_rest_remote_control(self):
         """Refresh Solar.web remote-control state."""
         config = await self._rest_client.async_get_remote_control()
+        self.data["rest_remote_readback_unix"] = time.time()
         self.data["rest_remote_control_enabled"] = bool(
             config["enableRemoteControl"]
         )
@@ -461,7 +463,7 @@ class Hub:
 
     @toggle_busy
     async def set_remote_control_enabled(self, enabled: bool):
-        """Enable or suspend Solar.web remote control and both profiles."""
+        """Change only the Solar.web master, preserving profile choices."""
         if not self.rest_remote_control_configured:
             raise RuntimeError("Solar.web remote control is unavailable")
         config = await self._rest_client.async_set_remote_control_enabled(enabled)
@@ -474,6 +476,14 @@ class Hub:
         self.data["rest_remote_technician_profile"] = bool(
             config["technicianRemoteControlProfileActive"]
         )
+        self._notify_entities()
+
+    @toggle_busy
+    async def set_customer_profile_enabled(self, enabled: bool):
+        if not self.rest_remote_control_configured:
+            raise RuntimeError("Solar.web customer profile control is unavailable")
+        await self._rest_client.async_set_customer_profile_enabled(enabled)
+        await self._refresh_rest_remote_control()
         self._notify_entities()
 
     def _notify_entities(self):

@@ -167,36 +167,35 @@ class FroniusRestClient:
         """Return the Solar.web remote-control configuration."""
         return await self._request("GET", SOLARWEB_PATH)
 
-    async def async_set_remote_control_enabled(
-        self, enabled: bool
-    ) -> dict[str, Any]:
-        """Set and verify the Solar.web master and profile controls."""
-        payload = {
-            "enableRemoteControl": enabled,
-            "customerRemoteControlProfileActive": enabled,
-            "technicianRemoteControlProfileActive": enabled,
-        }
+    async def _set_cloud_flag(self, key: str, enabled: bool) -> dict[str, Any]:
+        before = await self.async_get_remote_control()
+        flags = ("enableRemoteControl", "customerRemoteControlProfileActive",
+                 "technicianRemoteControlProfileActive")
+        if any(not isinstance(before.get(flag), bool) for flag in flags):
+            raise FroniusRestError("Cloud profile readback unavailable")
+        if key == "enableRemoteControl" and not enabled and before["technicianRemoteControlProfileActive"]:
+            raise FroniusRestError("Regulatory cloud profile is active; master disable refused")
+        payload = {key: enabled}
         result = await self._request("POST", SOLARWEB_PATH, payload)
-        expected = set(payload)
-        failures = (
-            result.get("errors", [])
-            + result.get("permissionFailure", [])
-            + result.get("validationErrors", [])
-            + result.get("writeFailure", [])
-        )
-        if failures or not expected.issubset(result.get("writeSuccess", [])):
-            raise FroniusRestError(f"Remote-control write failed: {result}")
-
-        config = None
+        failures = sum((result.get(name, []) for name in
+                        ("errors", "permissionFailure", "validationErrors", "writeFailure")), [])
+        if failures or key not in result.get("writeSuccess", []):
+            raise FroniusRestError("Cloud control write was not acknowledged")
         for _attempt in range(5):
             await asyncio.sleep(1)
             config = await self.async_get_remote_control()
-            if all(bool(config[key]) is enabled for key in payload):
-                return config
-        raise FroniusRestError(
-            f"Remote-control verification failed: expected {enabled}, got "
-            f"{config}"
-        )
+            if any(config.get(flag) is not before[flag] for flag in flags if flag != key):
+                raise FroniusRestError("An unrelated cloud profile changed; review required")
+            if config.get(key) is enabled:return config
+        raise FroniusRestError("Cloud control readback did not confirm the requested state")
+
+    async def async_set_remote_control_enabled(self, enabled: bool) -> dict[str, Any]:
+        """Change only the master; never implicitly enable either profile."""
+        return await self._set_cloud_flag("enableRemoteControl", enabled)
+
+    async def async_set_customer_profile_enabled(self, enabled: bool) -> dict[str, Any]:
+        """Change optional customer/VPP control, preserving regulatory control."""
+        return await self._set_cloud_flag("customerRemoteControlProfileActive", enabled)
 
     async def async_set_soft_export_limit(self, watts: int) -> dict[str, Any]:
         """Set and verify the native Smart Meter-following soft export limit."""

@@ -1,6 +1,8 @@
 """BYD Battery Box Class"""
 
 import asyncio
+import time
+from .storage_control import observed_storage_mode
 import logging
 from .extmodbusclient import ExtModbusClient
 import requests
@@ -474,44 +476,19 @@ class FroniusModbusClient(ExtModbusClient):
         self.data['WChaGra'] = self.calculate_value(WChaGra, 0, 0)
         self.data['WDisChaGra'] = self.calculate_value(WDisChaGra, 0, 0)
 
-        control_mode = self.data.get('control_mode')
-        if control_mode is None or control_mode != STORAGE_CONTROL_MODE.get(storage_control_mode):
-            if discharge_power >= 0:
-                self.data['discharge_limit'] = discharge_power / 100.0 
-                self.data['grid_charge_power'] = 0
-            else: 
-                self.data['grid_charge_power'] = (discharge_power * -1) / 100.0 
-                self.data['discharge_limit'] = 0
-            if charge_power >= 0:
-                self.data['charge_limit'] = charge_power / 100.0 
-                self.data['grid_discharge_power'] = 0
-            else: 
-                self.data['grid_discharge_power'] = (charge_power * -1) / 100.0 
-                self.data['charge_limit'] = 0
-
-            self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
-
-        # set extended storage control mode at startup
-        ext_control_mode = self.data.get('ext_control_mode')
-        if ext_control_mode is None:
-            if storage_control_mode == 0:
-                ext_control_mode = 0
-            elif storage_control_mode in [1,3] and charge_power == 0:
-                ext_control_mode = 7
-            elif storage_control_mode == 1:
-                ext_control_mode = 1
-            elif storage_control_mode in [2,3] and discharge_power < 0:
-                ext_control_mode = 4
-            elif storage_control_mode in [2,3] and charge_power < 0:
-                ext_control_mode = 5
-            elif storage_control_mode in [2,3] and discharge_power == 0:
-                ext_control_mode = 6
-            elif storage_control_mode == 2:
-                ext_control_mode = 2
-            elif storage_control_mode == 3:
-                ext_control_mode = 3
-            self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE[ext_control_mode]
-            self.storage_extended_control_mode = ext_control_mode
+        self.data['discharge_limit'] = max(0, discharge_power / 100.0)
+        self.data['charge_limit'] = max(0, charge_power / 100.0)
+        self.data['grid_charge_power'] = max(0, -discharge_power / 100.0)
+        self.data['grid_discharge_power'] = max(0, -charge_power / 100.0)
+        self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
+        observed = observed_storage_mode(storage_control_mode, charge_power, discharge_power,
+                                         self.storage_extended_control_mode)
+        self.data['ext_control_mode'] = STORAGE_EXT_CONTROL_MODE.get(observed)
+        self.storage_extended_control_mode = observed
+        self.data['storage_mode_raw'] = storage_control_mode
+        self.data['storage_charge_rate_raw'] = charge_power
+        self.data['storage_discharge_rate_raw'] = discharge_power
+        self.data['storage_readback_unix'] = time.time()
 
         if self.storage_extended_control_mode == 8:
             soc = self.data.get('soc')

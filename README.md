@@ -78,12 +78,20 @@ The local REST API is firmware-private and may change in future Fronius
 firmware. Home Assistant stores the supplied credential in the integration's
 config-entry options.
 
-The **Solar.web remote control** select changes the inverter's remote-control
-master switch and its customer and technician profiles together. Fronius cloud
-control overrides local export limitation, so automations can temporarily
-disable this select before applying **Zero export**, then restore the normal
-limit before re-enabling remote control. Disabling it also pauses remote battery
-commands; Solar.web monitoring and data upload remain enabled.
+The **Solar.web remote control** select changes only the cloud master switch,
+preserving both profile choices. Disabling the master is refused while the
+regulatory/technician profile is active. The separate **Solar.web customer VPP
+control** select controls the optional customer profile without changing the
+regulatory profile, cloud master or monitoring upload. Restoring the master does
+not implicitly re-enable VPP control. Automations should not toggle regulatory
+controls to arbitrate routine battery/export operation.
+
+Storage modes and charge/discharge limits are decoded on every Modbus poll,
+including changes made by another controller. Storage selects expose actual raw
+mode, rate limits and a `readback_unix` timestamp. A service call does not publish
+an optimistic mode confirmation; wait for a fresh poll and verify physical power
+before depending on a restriction. Cloud commands may take precedence over local
+controls, so a register acknowledgement alone cannot guarantee no discharge.
 
 REST control state is refreshed once per minute, so changes made in the local
 inverter interface are reflected in Home Assistant without reloading the
@@ -277,3 +285,9 @@ Inverter
 - [Fronius operating instructions PDF](https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf)
 - [home-assistant-solaredge-modbus](https://github.com/binsentsu/home-assistant-solaredge-modbus/)
 - [byd_charging](https://github.com/bigramonk/byd_charging)
+
+## Focused control tests
+
+Run `python -m unittest discover -s tests` with `aiohttp` installed. Tests cover
+external mode/rate changes, repeated storage polls, independent optional VPP
+control and preservation of regulatory profiles.
