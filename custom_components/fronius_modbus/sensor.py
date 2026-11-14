@@ -2,18 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Dict, Any
 
 from homeassistant.components.sensor import (
     SensorEntity,
 )
-from homeassistant.const import CONF_NAME #, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.icon import icon_for_battery_level
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import Entity
-from homeassistant.core import callback
-from homeassistant.util import slugify
 
 from . import HubConfigEntry
 from .const import (
@@ -118,13 +112,11 @@ async def async_setup_entry(
             entities.append(sensor)
 
     async_add_entities(entities)
-    return True
-
 class FroniusModbusSensor(FroniusModbusBaseEntity, SensorEntity):
     """Representation of an Fronius Modbus Modbus sensor."""
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state of the sensor."""
         if self._key in self._hub.data:
             value = self._hub.data[self._key]
@@ -133,16 +125,4 @@ class FroniusModbusSensor(FroniusModbusBaseEntity, SensorEntity):
                     value = value[:255]
                     _LOGGER.error(f'state length > 255. k: {self._key} v: {value}')
             return value
-
-            # self._icon = icon_for_battery_level(
-            #     battery_level=self.native_value, charging=False
-            # )                
-
-    @property
-    def extra_state_attributes(self):
-        return None
-
-
-
-
 

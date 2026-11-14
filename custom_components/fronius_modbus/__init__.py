@@ -9,6 +9,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 
 from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     DOMAIN,
     CONF_INVERTER_UNIT_ID,
@@ -34,19 +36,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
     inverter_unit_id = entry.data.get(CONF_INVERTER_UNIT_ID, 1)
     meter_unit_ids = [entry.data.get(CONF_METER_UNIT_ID, 1)]
     scan_interval = entry.data[CONF_SCAN_INTERVAL]
+    rest_username = entry.options.get(CONF_USERNAME)
+    rest_password = entry.options.get(CONF_PASSWORD)
 
     _LOGGER.debug("Setup %s.%s", DOMAIN, name)
 
     # Store an instance of the "connecting" class that does the work of speaking
     # with your actual devices.
-    entry.runtime_data = hub.Hub(hass = hass, name = name, host = host, port = port, inverter_unit_id=inverter_unit_id, meter_unit_ids=meter_unit_ids, scan_interval = scan_interval)
+    entry.runtime_data = hub.Hub(
+        hass=hass,
+        name=name,
+        host=host,
+        port=port,
+        inverter_unit_id=inverter_unit_id,
+        meter_unit_ids=meter_unit_ids,
+        scan_interval=scan_interval,
+        rest_session=async_get_clientsession(hass),
+        rest_username=rest_username,
+        rest_password=rest_password,
+    )
     
     await entry.runtime_data.init_data()
 
     # This creates each HA object for each platform your device requires.
     # It's done by calling the `async_setup_entry` function in each platform module.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration after its REST credentials change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""

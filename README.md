@@ -10,7 +10,7 @@ Unofficial Home Assistant custom integration for reading Fronius GEN24 inverter,
 ## Current state
 
 - Integration domain: `fronius_modbus`.
-- Current manifest version: `0.1.7`.
+- Current manifest version: `0.4.1`.
 - Home Assistant platforms: `sensor`, `number`, and `select`.
 - Connection type: local Modbus TCP polling.
 - Default port: `502`.
@@ -65,6 +65,38 @@ Enable Modbus TCP in the Fronius inverter web interface:
 | Meter Modbus Unit/Slave ID | `200` | Must be different from the inverter unit ID. |
 | Scan interval | `10` seconds | Setup rejects intervals below `5` seconds. |
 
+The integration's **Configure** dialog also accepts the inverter's local
+technician username and password. When supplied, it validates the local REST
+control endpoints. A **Grid export control** select is added when the inverter's
+Power Control and Soft Export Limit settings are enabled. **Zero export** sets
+the inverter's Smart Meter-following export limit to `0 W`; **Normal export**
+restores the positive limit that was active before curtailment. This control
+uses the inverter's local REST configuration API because the SunSpec
+`WMaxLimPct` register limits total inverter output rather than grid export.
+
+The local REST API is firmware-private and may change in future Fronius
+firmware. Home Assistant stores the supplied credential in the integration's
+config-entry options.
+
+The **Solar.web remote control** select changes only the cloud master switch,
+preserving both profile choices. Disabling the master is refused while the
+regulatory/technician profile is active. The separate **Solar.web customer VPP
+control** select controls the optional customer profile without changing the
+regulatory profile, cloud master or monitoring upload. Restoring the master does
+not implicitly re-enable VPP control. Automations should not toggle regulatory
+controls to arbitrate routine battery/export operation.
+
+Storage modes and charge/discharge limits are decoded on every Modbus poll,
+including changes made by another controller. Storage selects expose actual raw
+mode, rate limits and a `readback_unix` timestamp. A service call does not publish
+an optimistic mode confirmation; wait for a fresh poll and verify physical power
+before depending on a restriction. Cloud commands may take precedence over local
+controls, so a register acknowledgement alone cannot guarantee no discharge.
+
+REST control state is refreshed once per minute, so changes made in the local
+inverter interface are reflected in Home Assistant without reloading the
+integration.
+
 ## Devices and entities
 
 The integration creates Home Assistant devices for the inverter, configured smart meter, and battery storage when the relevant data is detected.
@@ -106,6 +138,23 @@ The integration creates Home Assistant devices for the inverter, configured smar
 | Fixed power factor | Fixed power factor enable state. |
 | Limit VAr control | Reactive-power limit enable state. |
 | Modbus ID | Inverter Modbus unit ID. |
+
+## Solar-output controls
+
+Four manual controls are created on the inverter device:
+
+| Entity | Options/range | Description |
+| --- | --- | --- |
+| Solar output control | `Auto`, `Limited` | `Auto` disables the SunSpec active-power ceiling. `Limited` applies the configured ceiling. |
+| Solar output limit percentage | `0`% to `100`%, step `0.01`% | Direct control of SunSpec Model 123 `WMaxLimPct`. The percentage is relative to the inverter's nominal power. |
+| Solar output limit | `0` W to detected inverter maximum, step `10` W | Convenience wrapper for the same active-power ceiling. The integration converts watts to `WMaxLimPct`. |
+| Inverter connection control | `Connected`, `Standby` | Writes SunSpec Model 123 `Conn`. `Standby` stops the complete inverter and automatically reverts after 15 minutes unless refreshed; `Connected` reconnects immediately and clears the timer. |
+
+Set either output-limit entity before selecting **Limited**. Both entities control the same register and therefore remain synchronized. For a 10 kW inverter, `10`% is 1000 W, `1`% is 100 W, and `0`% is 0 W. Select **Auto** to remove the ceiling and return output control to the inverter. The limit applies to inverter AC output; it is not a closed-loop grid-export limit. Battery charging and site load can therefore affect the grid-meter reading.
+
+GEN24 output changes are ramped rather than instantaneous. Allow roughly 90–100 seconds before deciding that a new ceiling has not taken effect. Another active controller, such as Solar.web/Amber cloud control or a higher-priority local rule, can override the Modbus command; Modbus must be allowed in the inverter settings and placed at the intended control priority.
+
+> A value of `0` W is supported, but test a nonzero limit first on each inverter/firmware combination. If a higher-priority cloud command prevents power reduction, **Standby** can stop export, but it also stops battery operation and the complete inverter. Reconnection includes the inverter's normal grid-check and power ramp, which can take several minutes.
 
 ### Smart meter sensors
 
@@ -236,3 +285,9 @@ Inverter
 - [Fronius operating instructions PDF](https://www.fronius.com/~/downloads/Solar%20Energy/Operating%20Instructions/42,0410,2649.pdf)
 - [home-assistant-solaredge-modbus](https://github.com/binsentsu/home-assistant-solaredge-modbus/)
 - [byd_charging](https://github.com/bigramonk/byd_charging)
+
+## Focused control tests
+
+Run `python -m unittest discover -s tests` with `aiohttp` installed. Tests cover
+external mode/rate changes, repeated storage polls, independent optional VPP
+control and preservation of regulatory profiles.

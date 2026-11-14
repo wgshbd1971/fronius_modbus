@@ -4,12 +4,27 @@ import logging
 from typing import Any
 
 import voluptuous as vol
+from aiohttp import ClientError
 
 from homeassistant import config_entries, exceptions
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .hub import Hub
-from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
+from .froniusrestclient import (
+    FroniusRestAuthenticationError,
+    FroniusRestClient,
+    FroniusRestError,
+)
+from homeassistant.const import (
+    CONF_NAME,
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
 from .const import (
     DOMAIN,
     DEFAULT_NAME,
@@ -17,6 +32,7 @@ from .const import (
     DEFAULT_PORT,
     DEFAULT_INVERTER_UNIT_ID,
     DEFAULT_METER_UNIT_ID,
+    DEFAULT_REST_USERNAME,
     CONF_INVERTER_UNIT_ID,
     CONF_METER_UNIT_ID,
     SUPPORTED_MANUFACTURERS,
@@ -56,12 +72,16 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     """
     # Validate the data can be used to set up a connection.
 
-    if len(data[CONF_HOST]) < 3:
+    if len(data[CONF_HOST].strip()) < 3:
         raise InvalidHost
-    if data[CONF_PORT] > 65535:
+    if not 1 <= data[CONF_PORT] <= 65535:
         raise InvalidPort
     if data[CONF_SCAN_INTERVAL] < 5:
         raise ScanIntervalTooShort
+    if not 1 <= data[CONF_INVERTER_UNIT_ID] <= 247:
+        raise InvalidModbusAddress
+    if not 1 <= data[CONF_METER_UNIT_ID] <= 247:
+        raise InvalidModbusAddress
         
     meter_addresses = [data[CONF_METER_UNIT_ID]]
 
@@ -71,15 +91,24 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         _LOGGER.error(f"Modbus addresses are not unique {all_addresses}")
         raise AddressesNotUnique
 
+    hub = Hub(
+        hass,
+        data[CONF_NAME],
+        data[CONF_HOST],
+        data[CONF_PORT],
+        data[CONF_INVERTER_UNIT_ID],
+        meter_addresses,
+        data[CONF_SCAN_INTERVAL],
+    )
     try:
-        hub = Hub(hass, data[CONF_NAME], data[CONF_HOST], data[CONF_PORT], data[CONF_INVERTER_UNIT_ID], meter_addresses, data[CONF_SCAN_INTERVAL])
-
         await hub.init_data()
-    except Exception as e:
+    except Exception as err:
         # If there is an error, raise an exception to notify HA that there was a
         # problem. The UI will also show there was a problem
-        _LOGGER.error(f"Cannot start hub {e}")
-        raise CannotConnect
+        _LOGGER.error("Cannot start hub: %s", err)
+        raise CannotConnect from err
+    finally:
+        hub.close()
 
     manufacturer = hub.data.get('i_manufacturer')
     if manufacturer is None:
@@ -123,6 +152,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # changes.
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Return the options flow for authenticated REST control."""
+        return FroniusOptionsFlow()
+
     async def async_step_user(self, user_input=None):
         """Handle the initial step."""
         # This goes through the steps to take the user through the setup process.
@@ -133,6 +168,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # `validate_input` above.
         errors = {}
         if user_input is not None:
+            user_input = {
+                **user_input,
+                CONF_HOST: user_input[CONF_HOST].strip(),
+            }
+            duplicate_keys = (
+                CONF_HOST,
+                CONF_PORT,
+                CONF_INVERTER_UNIT_ID,
+            )
+            if any(
+                all(entry.data.get(key) == user_input.get(key) for key in duplicate_keys)
+                for entry in self._async_current_entries()
+            ):
+                return self.async_abort(reason="already_configured")
             try:
                 info = await validate_input(self.hass, user_input)
 
@@ -149,6 +198,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unsupported_hardware"
             except AddressesNotUnique:
                 errors["base"] = "modbus_address_conflict"
+            except InvalidModbusAddress:
+                errors["base"] = "invalid_modbus_address"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -175,3 +226,58 @@ class AddressesNotUnique(exceptions.HomeAssistantError):
 
 class ScanIntervalTooShort(exceptions.HomeAssistantError):
     """Error to indicate the scan interval is too short."""    
+
+
+class InvalidModbusAddress(exceptions.HomeAssistantError):
+    """Error to indicate a Modbus address is outside the valid range."""
+
+
+class FroniusOptionsFlow(config_entries.OptionsFlow):
+    """Configure optional authenticated GEN24 REST control."""
+
+    async def async_step_init(self, user_input=None):
+        errors = {}
+        existing_username = self.config_entry.options.get(
+            CONF_USERNAME, DEFAULT_REST_USERNAME
+        )
+        existing_password = self.config_entry.options.get(CONF_PASSWORD)
+
+        if user_input is not None:
+            username = user_input.get(CONF_USERNAME, existing_username)
+            password = user_input.get(CONF_PASSWORD) or existing_password
+            if not password:
+                errors[CONF_PASSWORD] = "required"
+            else:
+                try:
+                    client = FroniusRestClient(
+                        async_get_clientsession(self.hass),
+                        self.config_entry.data[CONF_HOST],
+                        username,
+                        password,
+                    )
+                    await client.async_get_power_limits()
+                    return self.async_create_entry(
+                        title="",
+                        data={CONF_USERNAME: username, CONF_PASSWORD: password},
+                    )
+                except FroniusRestAuthenticationError:
+                    errors["base"] = "invalid_auth"
+                except (FroniusRestError, ClientError, TimeoutError):
+                    errors["base"] = "cannot_connect"
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected REST options error")
+                    errors["base"] = "unknown"
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_USERNAME, default=existing_username): str,
+                vol.Optional(CONF_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors
+        )

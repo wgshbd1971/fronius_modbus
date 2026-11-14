@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Fronius System",
+        "description": "Please provide connection details to Fronius System.",
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "scan_interval": "Scan interval in seconds",
+          "inverter_modbus_unit_id": "Inverter Modbus unit/slave ID",
+          "meter_modbus_unit_id": "Meter Modbus unit/slave ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_port": "Invalid port number",
+      "invalid_host": "Invalid host address",
+      "unsupported_hardware": "Unsupported hardware found. See error log for details.",
+      "unknown": "An unknown error occurred",
+      "scan_interval_too_short": "Scan interval is too short. Minimum 5 seconds.",
+      "invalid_modbus_address": "Modbus IDs must be between 1 and 247",
+      "modbus_address_conflict": "Modbus IDs are not unique"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Local inverter control",
+        "description": "Configure the local inverter Technician credential used for native export limits and Solar.web remote-control settings.",
+        "data": {
+          "username": "Local inverter REST username",
+          "password": "Local inverter REST password (leave blank to keep the current password)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not read the inverter's local control configuration",
+      "invalid_auth": "The local inverter REST username or password is invalid",
+      "required": "A password is required",
+      "unknown": "An unexpected error occurred"
+    }
+  }
+}
