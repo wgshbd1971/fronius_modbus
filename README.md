@@ -74,6 +74,11 @@ restores the positive limit that was active before curtailment. This control
 uses the inverter's local REST configuration API because the SunSpec
 `WMaxLimPct` register limits total inverter output rather than grid export.
 
+The `fronius_modbus.set_generation_limit` action accepts a config `entry_id` and
+`percent` (0–100). It uses the native REST runtime output command: 0 suppresses
+output and 100 releases the ceiling, without changing standby, export settings,
+or cloud profiles. An acknowledgement is not proof of measured curtailment.
+
 The local REST API is firmware-private and may change in future Fronius
 firmware. Home Assistant stores the supplied credential in the integration's
 config-entry options.

@@ -28,6 +28,19 @@ class RestTests(unittest.IsolatedAsyncioTestCase):
   if other_change:after['technicianRemoteControlProfileActive']=False
   self.c.async_get_remote_control=AsyncMock(side_effect=[self.before,after]);self.c._request=AsyncMock(return_value={'writeSuccess':[key]})
   with patch.object(rest.asyncio,'sleep',new=AsyncMock()):return await self.c._set_cloud_flag(key,enabled)
+ async def test_generation_zero_and_release_only_send_output_command(self):
+  for percent in (0,100):
+   self.c._request=AsyncMock(return_value={'success':True})
+   await self.c.async_set_generation_limit(percent)
+   self.c._request.assert_awaited_once_with('POST','/api/commands/InverterControl',{'pRel':float(percent),'pRelSlewRate':100})
+ async def test_generation_rejects_bad_values_before_device_write(self):
+  self.c._request=AsyncMock()
+  for value in (-1,101,float('nan'),float('inf'),None,True):
+   with self.assertRaises(ValueError):await self.c.async_set_generation_limit(value)
+  self.c._request.assert_not_awaited()
+ async def test_generation_negative_acknowledgement_is_failure(self):
+  self.c._request=AsyncMock(return_value={'success':False})
+  with self.assertRaises(rest.FroniusRestError):await self.c.async_set_generation_limit(0)
  async def test_optional_vpp_disable_preserves_master_and_regulatory(self):
   after=await self.invoke('customerRemoteControlProfileActive',False)
   self.c._request.assert_awaited_once_with('POST',rest.SOLARWEB_PATH,{'customerRemoteControlProfileActive':False})

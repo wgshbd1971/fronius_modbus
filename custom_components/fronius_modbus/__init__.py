@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.const import Platform
 
 from homeassistant.const import CONF_NAME, CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL
@@ -29,6 +31,22 @@ HubConfigEntry = ConfigEntry[hub.Hub]
 
 async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
     """Set up Fronius Modbus from a config entry."""
+
+    if not hass.services.has_service(DOMAIN, "set_generation_limit"):
+        async def set_generation_limit(call: ServiceCall) -> None:
+            target = hass.config_entries.async_get_entry(call.data["entry_id"])
+            if target is None or target.domain != DOMAIN or target.state is not ConfigEntryState.LOADED:
+                raise HomeAssistantError("Fronius integration is not loaded")
+            client = target.runtime_data._rest_client
+            if client is None:
+                raise HomeAssistantError("Local Fronius REST credentials are not configured")
+            await client.async_set_generation_limit(call.data["percent"])
+
+        hass.services.async_register(
+            DOMAIN, "set_generation_limit", set_generation_limit,
+            schema=vol.Schema({vol.Required("entry_id"): str,
+                               vol.Required("percent"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100))}),
+        )
 
     name = entry.data[CONF_NAME]
     host = entry.data[CONF_HOST]

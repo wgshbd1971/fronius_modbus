@@ -159,6 +159,15 @@ class FroniusRestClient:
                     return await response.json()
         raise FroniusRestAuthenticationError("Fronius authentication retry failed")
 
+    async def async_set_generation_limit(self, percent: float) -> None:
+        """Set the native runtime output ceiling without changing export/cloud settings."""
+        if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not 0 <= percent <= 100:
+            raise ValueError("Generation percentage must be between 0 and 100")
+        result = await self._request("POST", "/api/commands/InverterControl",
+                                     {"pRel": float(percent), "pRelSlewRate": 100})
+        if result.get("success") is not True:
+            raise FroniusRestError("Generation-limit command was not acknowledged")
+
     async def async_get_power_limits(self) -> dict[str, Any]:
         """Return the native feed-in-limit configuration."""
         return await self._request("GET", POWER_LIMITS_PATH)
