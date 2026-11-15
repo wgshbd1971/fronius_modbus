@@ -10,3 +10,8 @@ def observed_storage_mode(mode,charge_rate,discharge_rate,requested=None):
     if mode&2 and discharge_rate==0:return 6
     if mode&1 and charge_rate==0:return 7
     return mode
+
+
+def storage_rate_watts(raw_rate, base_watts):
+    """Convert signed SunSpec InOutWRte (scale -2 percent) to watts."""
+    return round(raw_rate * base_watts / 10000)

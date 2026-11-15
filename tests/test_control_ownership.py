@@ -13,6 +13,13 @@ class StorageTests(unittest.TestCase):
   for args,want in [((3,10000,0),6),((2,10000,-5000),4),((1,-5000,10000),5),((3,0,10000),7),((9,0,0),None)]:self.assertEqual(p.observed_storage_mode(*args),want)
  def test_zero_power_grid_intent_is_retained_only_for_matching_registers(self):
   self.assertEqual(p.observed_storage_mode(2,10000,0,4),4);self.assertEqual(p.observed_storage_mode(3,10000,0,4),6)
+class StoragePowerTests(unittest.TestCase):
+ def test_signed_percentage_is_converted_to_watts(self):
+  self.assertEqual(p.storage_rate_watts(-4883,10240),-5000)
+  self.assertEqual(p.storage_rate_watts(10000,11000),11000)
+ def test_zero_and_half_rate(self):
+  self.assertEqual(p.storage_rate_watts(0,10240),0)
+  self.assertEqual(p.storage_rate_watts(5000,10240),5120)
 class RestTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.c=rest.FroniusRestClient(None,'example.invalid','unused','unused');self.before=dict(enableRemoteControl=True,customerRemoteControlProfileActive=True,technicianRemoteControlProfileActive=True)
@@ -51,7 +58,11 @@ class PollTests(unittest.IsolatedAsyncioTestCase):
    def convert_from_registers(self,r,data_type):return r[0]-65536 if data_type=='i' and r[0]>32767 else r[0]
   client._client=Wire();regs=[0]*24;regs[0]=11000;regs[3]=0;regs[6]=9300;regs[9]=6;regs[10]=10000;regs[11]=10000
   client.get_registers=AsyncMock(return_value=regs)
-  await client.read_inverter_storage_data();self.assertEqual(client.data['ext_control_mode'],'Auto');self.assertEqual(client.data['discharge_limit'],100)
+  await client.read_inverter_storage_data();self.assertEqual(client.data['ext_control_mode'],'Auto');self.assertEqual(client.data['discharge_limit'],11000)
   regs[3]=3;regs[10]=0;await client.read_inverter_storage_data();self.assertEqual(client.data['ext_control_mode'],'Block Discharging');self.assertEqual(client.data['storage_mode_raw'],3)
-  regs[10]=10000;await client.read_inverter_storage_data();self.assertEqual(client.data['ext_control_mode'],'PV Charge and Discharge Limit');self.assertEqual(client.data['discharge_limit'],100)
+  regs[10]=10000;await client.read_inverter_storage_data();self.assertEqual(client.data['ext_control_mode'],'PV Charge and Discharge Limit');self.assertEqual(client.data['discharge_limit'],11000)
+  regs[0]=10240;regs[3]=2;regs[10]=65536-4883
+  await client.read_inverter_storage_data();self.assertEqual(client.data['grid_charge_power'],5000);self.assertEqual(client.data['discharge_limit'],0)
+  regs[3]=1;regs[11]=65536-5000;regs[10]=10000
+  await client.read_inverter_storage_data();self.assertEqual(client.data['grid_discharge_power'],5120);self.assertEqual(client.data['charge_limit'],0)
 if __name__=='__main__':unittest.main()

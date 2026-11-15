@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from .storage_control import observed_storage_mode
+from .storage_control import observed_storage_mode, storage_rate_watts
 import logging
 from .extmodbusclient import ExtModbusClient
 import requests
@@ -476,10 +476,10 @@ class FroniusModbusClient(ExtModbusClient):
         self.data['WChaGra'] = self.calculate_value(WChaGra, 0, 0)
         self.data['WDisChaGra'] = self.calculate_value(WDisChaGra, 0, 0)
 
-        self.data['discharge_limit'] = max(0, discharge_power / 100.0)
-        self.data['charge_limit'] = max(0, charge_power / 100.0)
-        self.data['grid_charge_power'] = max(0, -discharge_power / 100.0)
-        self.data['grid_discharge_power'] = max(0, -charge_power / 100.0)
+        self.data['discharge_limit'] = max(0, storage_rate_watts(discharge_power, max_charge))
+        self.data['charge_limit'] = max(0, storage_rate_watts(charge_power, max_charge))
+        self.data['grid_charge_power'] = max(0, -storage_rate_watts(discharge_power, max_charge))
+        self.data['grid_discharge_power'] = max(0, -storage_rate_watts(charge_power, max_charge))
         self.data['control_mode'] = STORAGE_CONTROL_MODE.get(storage_control_mode)
         observed = observed_storage_mode(storage_control_mode, charge_power, discharge_power,
                                          self.storage_extended_control_mode)
