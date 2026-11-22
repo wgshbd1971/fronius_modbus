@@ -1,0 +1,45 @@
+set_generation_limit:
+  name: Set generation limit
+  description: Set the native REST output ceiling. 0 suppresses output; 100 releases the ceiling. Does not change inverter connection, grid export or cloud profiles.
+  fields:
+    entry_id:
+      name: Fronius config entry
+      required: true
+      selector:
+        config_entry:
+          integration: fronius_modbus
+    percent:
+      name: Maximum output percentage
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+set_export_limit:
+  name: Set grid export limit
+  description: Set the native meter-following export ceiling, bounded by the saved normal limit. An optional test duration restores zero export and survives an HA restart.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        text:
+    watts:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100000
+          unit_of_measurement: W
+          mode: box
+    restore_after:
+      default: 0
+      description: Test seconds (maximum 120); zero means a persistent setting. A bounded test requires zero export at entry.
+      selector:
+        number:
+          min: 0
+          max: 120
+          unit_of_measurement: s
+          mode: box

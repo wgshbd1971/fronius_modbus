@@ -1,11 +1,11 @@
-#import os, sys; sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-
 """Extended Modbus Class"""
+
+from __future__ import annotations
 
 import logging
 import operator
 #from datetime import timedelta, datetime
-from typing import Optional, Literal
+from typing import Literal
 import struct
 import asyncio
 
@@ -41,8 +41,7 @@ class ExtModbusClient:
         self._host = host
         self._port = port
         self._unit_id = unit_id
-        self.busy = False
-        if not framer is None:
+        if framer is not None:
             self._client = AsyncModbusTcpClient(host=host, port=port, framer=framer, timeout=timeout) 
         else:
             self._client = AsyncModbusTcpClient(host=host, port=port, timeout=timeout) 
@@ -68,7 +67,7 @@ class ExtModbusClient:
     
     async def _check_and_reconnect(self):
         if not self._client.connected:
-            _LOGGER.warning("Modbus client is not connected, reconnecting...", exc_info=True)
+            _LOGGER.warning("Modbus client is not connected, reconnecting")
             return await self.connect()
         return self._client.connected
 
@@ -89,51 +88,91 @@ class ExtModbusClient:
             raise ValueError(f"Value {value} failed validation ({comparison}{against})")
         return value
 
-    async def read_holding_registers(self, unit_id, address, count, retries = 3):
-        """Read holding registers."""
+    async def read_holding_registers(self, unit_id, address, count, retries=3):
+        """Read holding registers, reconnecting and retrying transient failures."""
         await self._check_and_reconnect()
 
-        for attempt in range(retries+1):
+        last_error = None
+        for attempt in range(retries + 1):
             try:
-                data = await self._client.read_holding_registers(address=address, count=count, device_id=unit_id)
-            except ModbusIOException as e:
-                _LOGGER.error(f'error reading registers. IO error. connected: {self._client.connected} address: {address} count: {count} unit id: {unit_id}')
-                return None
-            except ConnectionException as e:
-                _LOGGER.error(f'error reading registers. connection exception connected: {self._client.connected} address: {address} count: {count} unit id: {unit_id} {e} ')
-                return None
-            except Exception as e:
-                _LOGGER.error(f'error reading registers. unknown error. connected {self._client.connected} address: {address} count: {count} unit id: {unit_id} type {type(e)} error {e} ')
+                data = await self._client.read_holding_registers(
+                    address=address, count=count, device_id=unit_id
+                )
+            except (ModbusIOException, ConnectionException) as err:
+                last_error = err
+                self._client.close()
+                if attempt < retries:
+                    _LOGGER.debug(
+                        "Register read failed; retrying %s/%s for address %s unit %s: %s",
+                        attempt + 1,
+                        retries,
+                        address,
+                        unit_id,
+                        err,
+                    )
+                    await asyncio.sleep(0.2)
+                    await self._check_and_reconnect()
+                    continue
+                break
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected register read error at address %s count %s unit %s",
+                    address,
+                    count,
+                    unit_id,
+                )
                 return None
 
             if not data.isError():
-                break
-            else:
-                if isinstance(data,ModbusIOException):
-                    _LOGGER.debug(f"io error reading register retries: {attempt}/{retries} connected {self._client.connected} address: {address} count: {count} unit id: {unit_id}  error: {data} ")
-                elif isinstance(data, ExceptionResponse):
-                    _LOGGER.debug(f"Exception response reading register retries: {attempt}/{retries} connected {self._client.connected} address: {address} count: {count} unit id: {unit_id}  {data}")
-                else:
-                    _LOGGER.debug(f"Unknown data response error reading register retries: {attempt}/{retries} connected {self._client.connected} address: {address} count: {count} unit id: {unit_id}  {data}")
-                await asyncio.sleep(.2) 
+                return data
 
-        if data.isError():
-            _LOGGER.error(f"error reading registers. retries: {attempt}/{retries} connected {self._client.connected} register: {address} count: {count} unit id: {unit_id} retries {retries} error: {data} ")
+            last_error = data
+            response_type = (
+                "I/O error"
+                if isinstance(data, ModbusIOException)
+                else "exception response"
+                if isinstance(data, ExceptionResponse)
+                else "unknown response error"
+            )
+            if attempt < retries:
+                _LOGGER.debug(
+                    "%s reading register; retrying %s/%s at address %s unit %s: %s",
+                    response_type,
+                    attempt + 1,
+                    retries,
+                    address,
+                    unit_id,
+                    data,
+                )
+                await asyncio.sleep(0.2)
+
+        _LOGGER.error(
+            "Register read failed after %s attempts at address %s count %s unit %s: %s",
+            retries + 1,
+            address,
+            count,
+            unit_id,
+            last_error,
+        )
+        return None
+
+    async def get_registers(self, unit_id, address, count, retries=3):
+        data = await self.read_holding_registers(
+            unit_id=unit_id,
+            address=address,
+            count=count,
+            retries=retries,
+        )
+        if data is None:
             return None
-
-        return data
-
-    async def get_registers(self, unit_id, address, count, retries = 0):
-        data = await self.read_holding_registers(unit_id=unit_id, address=address, count=count)
         if data.isError():
-            if isinstance(data,ModbusIOException):
-                if retries < 1:
-                    _LOGGER.debug(f"IO Error: {data}. Retrying...")
-                    return await self.get_registers(address=address, count=count, retries = retries + 1)
-                else:
-                    _LOGGER.error(f"error reading register: {address} count: {count} unit id: {unit_id} error: {data} ")
-            else:
-                _LOGGER.error(f"error reading register: {address} count: {count} unit id: {unit_id} error: {data} ")
+            _LOGGER.error(
+                "error reading register: %s count: %s unit id: %s error: %s",
+                address,
+                count,
+                unit_id,
+                data,
+            )
             return None
         return data.registers
 
@@ -160,8 +199,8 @@ class ExtModbusClient:
     def strip_escapes(self, value:str):
         if value is None:
             return
-        filter = ''.join([chr(i) for i in range(0, 32)])
-        return value.translate(str.maketrans('', '', filter)).strip()
+        control_chars = ''.join(chr(i) for i in range(0, 32))
+        return value.translate(str.maketrans('', '', control_chars)).strip()
 
     def convert_from_registers_int8(self, regs):
         return [int(regs[0] >> 8), int(regs[0] & 0xFF)]
@@ -183,6 +222,7 @@ class ExtModbusClient:
         :returns: scalar or array of "data_type"
         :raises ModbusException: when size of registers is not a multiple of data_type
         """
+        registers = list(registers)
         if not (data_len := data_type.value[1]):
             byte_list = bytearray()
             if word_order == "little":
@@ -234,7 +274,7 @@ class ExtModbusClient:
                 result = byteArray[pos] * 256 + byteArray[pos + 1]
             else:
                 result = byteArray[pos+1] * 256 + byteArray[pos]
-            if (result > 32768):
+            if result >= 32768:
                 result -= 65536
         except:
           return 0
