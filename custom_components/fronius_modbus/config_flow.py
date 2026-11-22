@@ -258,7 +258,7 @@ class FroniusOptionsFlow(config_entries.OptionsFlow):
                     await client.async_get_power_limits()
                     return self.async_create_entry(
                         title="",
-                        data={CONF_USERNAME: username, CONF_PASSWORD: password},
+                        data={**self.config_entry.options, CONF_USERNAME: username, CONF_PASSWORD: password},
                     )
                 except FroniusRestAuthenticationError:
                     errors["base"] = "invalid_auth"

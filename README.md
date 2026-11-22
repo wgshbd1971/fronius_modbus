@@ -74,10 +74,21 @@ restores the positive limit that was active before curtailment. This control
 uses the inverter's local REST configuration API because the SunSpec
 `WMaxLimPct` register limits total inverter output rather than grid export.
 
+The `fronius_modbus.set_export_limit` action accepts `entry_id`, `watts`, and
+optional `restore_after` seconds (maximum 120). It changes the native grid-export
+ceiling, not total PV generation. The saved normal ceiling is an upper bound and
+is retained in config-entry options, so a small temporary allowance cannot become
+the normal export limit. A bounded test requires zero export, restores zero on
+completion/cancellation, and records pending restoration for the next HA startup.
+A newer externally selected limit is preserved. Full power loss can leave the
+allowance active until HA returns. The export select exposes actual and normal
+watt limits as attributes. Existing automations remain free to change the limit;
+a test does not disable or replace them and does not start any load.
+
 The `fronius_modbus.set_generation_limit` action accepts a config `entry_id` and
 `percent` (0–100). It uses the native REST runtime output command: 0 suppresses
-output and 100 releases the ceiling, without changing standby, export settings,
-or cloud profiles. An acknowledgement is not proof of measured curtailment.
+output and 100 requests a full output ceiling, without changing standby, export settings,
+or cloud profiles. An acknowledgement is not proof of measured curtailment or release.
 
 The local REST API is firmware-private and may change in future Fronius
 firmware. Home Assistant stores the supplied credential in the integration's

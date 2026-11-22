@@ -172,6 +172,11 @@ class FroniusRestExportSelect(FroniusModbusBaseEntity, SelectEntity):
         return "Zero export" if limit <= 0 else "Normal export"
 
     @property
+    def extra_state_attributes(self):
+        return {"export_limit_w": self._hub.data.get("rest_export_limit_w"),
+                "normal_export_limit_w": self._hub.data.get("rest_export_normal_limit_w")}
+
+    @property
     def available(self) -> bool:
         return self._hub.online and self._hub.rest_export_control_configured
 

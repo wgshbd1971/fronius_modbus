@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -48,6 +49,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
                                vol.Required("percent"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100))}),
         )
 
+    if not hass.services.has_service(DOMAIN, "set_export_limit"):
+        async def set_export_limit(call: ServiceCall) -> None:
+            target = hass.config_entries.async_get_entry(call.data["entry_id"])
+            if target is None or target.domain != DOMAIN or target.state is not ConfigEntryState.LOADED:
+                raise HomeAssistantError("Fronius integration is not loaded")
+            controller = target.runtime_data
+            watts = call.data["watts"]
+            seconds = call.data.get("restore_after", 0)
+            if not seconds:
+                await controller.set_export_limit(watts)
+                return
+            if target.options.get("export_limit_restore") is not None:
+                raise HomeAssistantError("An export-limit test is already pending")
+            # Save restoration before writing, including across an HA restart.
+            marker = {"watts": watts, "restore": 0}
+            hass.config_entries.async_update_entry(target, options={**target.options, "export_limit_restore": marker})
+            owns_setting = True
+            try:
+                if not await controller.set_export_limit(watts, expected_limit=0):
+                    owns_setting = False
+                    raise HomeAssistantError("A bounded export test must start from zero export")
+                await asyncio.sleep(seconds)
+            finally:
+                # Restore only our own setting; preserve a newer external command.
+                if owns_setting:
+                    await controller.set_export_limit(0, expected_limit=watts)
+                options = dict(target.options)
+                options.pop("export_limit_restore", None)
+                hass.config_entries.async_update_entry(target, options=options)
+
+        hass.services.async_register(
+            DOMAIN, "set_export_limit", set_export_limit,
+            schema=vol.Schema({vol.Required("entry_id"): str,
+                               vol.Required("watts"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                               vol.Optional("restore_after", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=120))}),
+        )
+
     name = entry.data[CONF_NAME]
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
@@ -74,7 +112,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
         rest_password=rest_password,
     )
     
+    # Preserve the real normal limit across temporary allowances and restarts.
+    normal = entry.options.get("normal_export_limit_w")
+    if isinstance(normal, int) and normal > 0:
+        entry.runtime_data._normal_export_limit_w = normal
     await entry.runtime_data.init_data()
+    if entry.runtime_data.rest_export_control_configured:
+        options = dict(entry.options)
+        options["normal_export_limit_w"] = entry.runtime_data._normal_export_limit_w
+        marker = options.pop("export_limit_restore", None)
+        if marker is not None:
+            await entry.runtime_data.set_export_limit(marker["restore"], expected_limit=marker["watts"])
+        if options != dict(entry.options):
+            hass.config_entries.async_update_entry(entry, options=options)
 
     # This creates each HA object for each platform your device requires.
     # It's done by calling the `async_setup_entry` function in each platform module.
@@ -85,6 +135,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the integration after its REST credentials change."""
+    client = entry.runtime_data._rest_client
+    if client is not None and (entry.options.get(CONF_USERNAME), entry.options.get(CONF_PASSWORD)) == (client._username, client._password):
+        return  # Internal export metadata does not require an integration reload.
     await hass.config_entries.async_reload(entry.entry_id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

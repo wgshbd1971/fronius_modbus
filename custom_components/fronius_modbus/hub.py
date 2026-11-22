@@ -350,12 +350,31 @@ class Hub:
         self.data["rest_export_active"] = bool(active_power["activated"])
         self.data["rest_export_soft_enabled"] = bool(soft_limit["enabled"])
         self.data["rest_export_limit_w"] = current_limit
-        if current_limit > 0:
+        if self._normal_export_limit_w is None and current_limit > 0:
             self._normal_export_limit_w = current_limit
         elif self._normal_export_limit_w is None and reference > 0:
             self._normal_export_limit_w = reference
         self.data["rest_export_normal_limit_w"] = self._normal_export_limit_w
         return config
+
+    @toggle_busy
+    async def set_export_limit(self, watts: int, expected_limit: int | None = None):
+        """Set a grid-export ceiling without replacing the saved normal ceiling."""
+        if not self.rest_export_control_configured:
+            raise RuntimeError("Native export-limit control is unavailable")
+        if isinstance(watts, bool) or not isinstance(watts, int) or not 0 <= watts <= self._normal_export_limit_w:
+            raise ValueError("Export allowance exceeds the saved normal export limit")
+        await self._refresh_rest_export_limit()
+        if not self.rest_export_control_configured:
+            raise RuntimeError("Native export limiting is no longer enabled")
+        current = self.data["rest_export_limit_w"]
+        if expected_limit is not None and current != expected_limit:
+            return False  # Another owner changed the limit; do not overwrite it.
+        if current != watts:
+            await self._rest_client.async_set_soft_export_limit(watts)
+            await self._refresh_rest_export_limit()
+            self._notify_entities()
+        return True
 
     @property
     def rest_remote_control_configured(self) -> bool:
